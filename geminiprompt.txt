@@ -1,0 +1,86 @@
+Prompts used to create gpsbrowse.html using Google Gemini
+This is sort of like documentation :)
+-----------------------------------------
+
+Write a HTML file containing javascript that I can run locally (I already have the permissions to allow javascript). This file shall read the file "gpstagged" from the current directory, and produce a plot with a dot for each image. 
+
+The file has around 15000 images entries, which look this:
+
+
+2013\November\Kuldep shipping pantorouters.jpg
+Date/Time: 2013:11:09 16:56:36
+GPS: 34.982486,135.699556
+
+2014\Camp - August\0730\0730_145716_peterphone.jpg
+Date/Time: 2014:07:30 14:57:16
+GPS: 46.409111,-83.767014
+
+
+First line path and filename, then date/time, then GPS coordinaes.
+
+For the map projection, just multiply longitude by 0.7 and use that for x, and use latitude for y, seeing that latitudes are mostly around 45 degrees north. 
+
+Start the map centered around GPS: 45.624897,-75.239783 and the window spanning 12 degrees longitude wide.
+
+The mouse wheel shall zoom as if the mouse pointer was the origin, so that what is under the mouse stays under the mouse. Hovering over an image will show the image in a 400x300 rectangle in the top right of the window. below this preview show the path and filename, the date/time, and GPS lat/longitude each on one line respectively. Left click on the image shall select it, right click shall pop up a context menu for entries "view image" -- which will pop up a separate browser window with the image,  "view directory" which will pop up the index.html from the directory that the image is in (just assume the corresponding index.html exists) and "view map" which will pop up the coordinates of the image in the preview image in google maps in a separate window.
+
+Make the dots for the image blue and 8 pixels in diameter. If another image falls within the size of the dot, instead of showing overlapping dots, merge them into one dot with twice the area. If more images fall into the area of the dot, also add those to the dot's area, and adjust such that the dot center is the average of the coordinates of the images it represents -- you can do that by just doing a weighted averages when adding a new dot if the existing dot represents multiple images. For now, lets not worry about a dot "eating" nearby already marked dots as it grows with more images added to it.
+
+As there are about 15000 images with coordinates, it can potentially get slow.  For the sake of speed, whenever the map is panned or zoomed, make a list consisting of only images that fall no more than 5 pixels outside the current view of the window (calculate the GPS bounding coordinates based on the screen, then filter images by their gps coordinates). Use that list for subsequent dot merging and mouseover highlighting. Mouse hover over or select shall just use the nearest image that is within 10 pixels, even if these are represented as one dot Also, left button down drag that is not within 10 pixels of an image shall be pan the image -- don't bother recomputing the list that falls within or re-merging the circles until the mouse drag is released. 
+
+----------------------------------------------------------------
+I love how you made the larger dots transparent to show smaller ones within.
+
+Make the merged dots size go up with the cube root of the number of images as opposed to square root, as some of the photo density in some coordinates is rather large.  Make single image dots 6 pixels in diameter instead of 8.
+
+Also, the file of gps tags is in the same directory as the HTML file you created, named "gpstagged.txt"
+
+If an image is selected with a click, it stays in the top right window, unless another is hovered over or selected.
+
+Is it proactical to make drags actually move what is on the screen? 
+----------------------------------------------------------------
+Panning works great!
+
+No need to prompt for the gpstagged file, just assume its in the current directory. 
+----------------------------------------------------------------
+Great! next steps to consider -- is there a good way to get a base map scaled accordingly to use as a background image? Also, the merged dots, that sort of turns into a clustering algorithm. Both quite complicated, opinions only, don't add those features yet 
+----------------------------------------------------------------
+I like the years all on top of each other, as it shows paths we have travelled many times. If I want to look at it by time, I can just browse to the index.html (the files are chronologically organized already, just not by coordinates).
+----------------------------------------------------------------
+yes, please make that alpha change.
+
+Another refinement -- I have thumbnails for all the images, which are by the same name but in the subdirectory _small. For example, image foo/barr/zoot.jpg would have a thumbnail that is of the right size in foo/barr/_small/zoot.jpg. Use that one, but for the preview top right only. 
+----------------------------------------------------------------
+Its interesting to know which camera the photo was taken with, so I revised my gpstagged.txt so that each enry has a forth line "Camera:". Example:
+
+2014/Camp - August/0730/0730_172649_peterphone.jpg
+Date/Time: 2014:07:30 17:26:49
+GPS: 46.409778,-83.767808
+Camera: iPhone 5s
+
+Please show the "Camera:..." below the GPS coordinates in the preview window 
+----------------------------------------------------------------
+This works really well, thanks!
+
+But it would be cool to be able to use it on my ipad. But there is no hover on mobile. So if a drag starts that is not on an image, assume its a drag to pan. If it starts on an image, treat it like a hover in that the preview image will keep updating to whatever image is closest to the "mouse". Also, not sure if this is practical to implement, but pinch in and out would be nice too. 
+----------------------------------------------------------------
+oh, I was thinking, make the image preview clickable for view image, click on the image name below it for view directory (the index.html in the directory) and clicking on the GPS coordinates takes you to google maps 
+----------------------------------------------------------------
+its hard to get a sense of scale. Near the top left, show a bar of length. The bar be a 10^x multiple of 100m,200m or 500m, so whatever largest fits inside 300 pixels, show that with a number in the middle showing the distance, for example, something like |<-----5km------>| (but use lines not ascii graphics). Compute the scale based on the latitude of the center of the screen
+----------------------------------------------------------------
+Mobile works great!
+
+A few more things to fix:
+
+When accessing from desktop, use a mouse pointer arrow, not a hand.
+
+On desktop, Clicking on the map should select the image that is currently already shown (its already the closest one)
+
+Also, for whichever image is drawn draw a right red highlight round dot, 6x6 pixel at the coordinates of the photo (mobile or desktop)
+
+Preview window: Instead of cropping to fill the 400x300 area, scale it down instead (but leave the area 400x300, the image just doesn't fill it)
+
+Clicking on the image doesn't always bring it up -- is the clickable area not the whole image? 
+----------------------------------------------------------------
+works great, love the animation. only problem is, on my ipad, taping on any part of the preview doesn't do anything. It often changes what is highlighted in the main part of the window and flips the image, but no action on clicking the links. 
+----------------------------------------------------------------
