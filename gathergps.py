@@ -1,11 +1,14 @@
-# Python script to gather GPS info from all the images that contain GPS timestamps.
-# creates "gpstagged.txt" which is placed in the digicam directory
-# alongside gpsbrowse.html, which loads this file for its data.
+# Program to gater info for all pictures with GPS coordinates in them
+# for HTML GPS coordinated browsing javascript program.
+# Feb 2026
+
 import os
 import re
 
-ROOT_DIR = "."            # start here
-OUTPUT_FILE = "gpstagged.txt"
+OUTPUT_FILE = "gpstagged.js"
+
+ROOT_DIR = "."            
+
 
 # Regex patterns
 re_filename = re.compile(r"^File name\s*:\s*(.+)$", re.M)
@@ -20,44 +23,68 @@ def dms_to_decimal(sign, deg, minutes, seconds):
         value = -value
     return value
 
-with open(OUTPUT_FILE, "w", encoding="utf-8") as out:
-    for root, dirs, files in os.walk(ROOT_DIR):
-        if "imagedata.cached" not in files:
+# Start the Javascript structure
+
+print("Gathering GPS data to file:",OUTPUT_FILE)
+outfile = open(OUTPUT_FILE, "w", encoding="utf-8")
+print("const rawImageData = `",file=outfile)
+
+for root, dirs, files in os.walk(ROOT_DIR):
+    # Logic to skip directories < 2011 at the first level
+    if root == ROOT_DIR:
+        # We only filter the 'dirs' list in place to prevent os.walk from entering them
+        original_dirs = list(dirs)
+        for d in original_dirs:
+            # Check if directory starts with a number
+            match = re.match(r"^(\d+)", d)
+            if match:
+                year = int(match.group(1))
+                if year < 2011:
+                    dirs.remove(d) # This stops os.walk from descending into this branch
+
+    if "imagedata.cached" not in files:
+        continue
+    
+    cache_path = os.path.join(root, "imagedata.cached")
+
+    with open(cache_path, "r", encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+
+    entries = re.split(r"\n\s*\n", content)
+
+    for entry in entries:
+        m_file = re_filename.search(entry)
+        m_time = re_datetime.search(entry)
+        m_model = re_cameramodel.search(entry)
+        m_lat = re_lat.search(entry)
+        m_lon = re_lon.search(entry)
+
+        if not (m_file and m_time and m_lat and m_lon):
             continue
-        print(root,"has cache")
-        cache_path = os.path.join(root, "imagedata.cached")
 
-        with open(cache_path, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
+        lat = dms_to_decimal(*m_lat.groups())
+        lon = dms_to_decimal(*m_lon.groups())
 
-        # Entries are separated by blank lines
-        entries = re.split(r"\n\s*\n", content)
+        if lat == 0.0 and lon == 0.0:
+            continue
 
-        for entry in entries:
-            m_file = re_filename.search(entry)
-            m_time = re_datetime.search(entry)
-            m_model = re_cameramodel.search(entry)
-            m_lat = re_lat.search(entry)
-            m_lon = re_lon.search(entry)
+        base_filename = os.path.basename(m_file.group(1))
+        try:
+            camera_model = m_model.group(1)
+        except:
+            camera_model = "????"
+            
+        full_path = os.path.join(root, base_filename)
+        full_path = full_path.replace("\\","/")
+        if full_path.startswith("./"): full_path = full_path[2:]
 
-            if not (m_file and m_time and m_lat and m_lon):
-                continue
+        # Output in the format the HTML script expects
+        print(f"{full_path}",file=outfile)
+        print(f"Date/Time: {m_time.group(1)}",file=outfile)
+        print(f"GPS: {lat:.7f},{lon:.7f}",file=outfile)
+        print(f"Camera: {camera_model}\n",file=outfile)
 
-            lat = dms_to_decimal(*m_lat.groups())
-            lon = dms_to_decimal(*m_lon.groups())
-
-            if lat == 0.0 and lon == 0.0:
-                continue
-
-            # Strip any path inside the filename, but keep directory path
-            base_filename = os.path.basename(m_file.group(1))
-            try:camera_model = m_model.group(1)
-            except:camera_model = "????"
-            full_path = os.path.join(root, base_filename)
-            full_path = full_path.replace("\\","/")
-            if full_path.startswith("./"): full_path = full_path[2:]
-
-            out.write(f"{full_path}\n")
-            out.write(f"Date/Time: {m_time.group(1)}\n")
-            out.write(f"GPS: {lat:.6f},{lon:.6f}\n")
-            out.write(f"Camera: {camera_model}\n\n")
+# Close the Javascript string
+print("`;",file=outfile)
+outfile.close()
+print("Done")
