@@ -190,9 +190,8 @@ function draw() {
         ctx.globalCompositeOperation = 'source-over';
         const p = project(currentPreview.dispLat, currentPreview.dispLon);
         if (currentPreview === selectedImage) {
-            const s = (Math.sin(Date.now() / 200) + 1) * 2;
             ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(p.x, p.y, 5 + s, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
     }
@@ -289,9 +288,9 @@ const handleMove = (x, y, isTouch) => {
             // Snap back to selected image if not hovering anything else
             updateOverlay(selectedImage);
         }
+        draw()
     }
 };
-
 
 
 const handleEnd = () => {
@@ -344,7 +343,6 @@ function findNearestImage(x, y, threshold) {
 
     // Using visibleImages here makes mouse interactions much faster
     visibleImages.forEach(img => {
-//        const pos = project(img.lat, img.lon);
         pos = project(img.dispLat, img.dispLon);
 
         const d = Math.sqrt((pos.x - x)**2 + (pos.y - y)**2);
@@ -375,8 +373,8 @@ canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 // Standard browser initialization
 initData();
-function animate() { draw(); requestAnimationFrame(animate); }
-animate();
+//function animate() { draw(); requestAnimationFrame(animate); }
+//animate();
 </script>
 </body>
 </html>
