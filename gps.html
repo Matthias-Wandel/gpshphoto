@@ -116,7 +116,7 @@ function updateVisibleData() {
     const useJitter = pixelsPerMeter > 30;
 
 
-    const spacing = 0.00000003;
+    const spacing = 0.00000005;
     visibleImages.forEach(img => {
         img.dispLat = img.lat; // Coordinates to use for display
         img.dispLon = img.lon;
@@ -358,7 +358,17 @@ function findNearestImage(x, y, threshold) {
 
 uiOverlay.addEventListener('touchstart', e => e.stopPropagation());
 uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
-previewImg.onclick = e => { e.stopPropagation(); if (currentPreview) window.open(currentPreview.path.replace(/\\/g, '/'), '_blank'); };
+
+// Function to handle opening the full-resolution image
+const openFullImage = (e) => {
+    e.stopPropagation();
+    if (currentPreview) {
+        window.open(currentPreview.path.replace(/\\/g, '/'), '_blank');
+    }
+};
+previewImg.onclick = openFullImage;
+previewImg.ontouchend = openFullImage;
+
 
 window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; updateVisibleData(); });
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
