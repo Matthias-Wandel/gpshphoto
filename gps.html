@@ -43,22 +43,61 @@ let clusters = [];
 let selectedImage = null;
 let currentPreview = null;
 
-// --- PERSISTENCE LOGIC ---
-const savedView = JSON.parse(localStorage.getItem('mapView')) || {
-    lat: 45.624897, lon: -75.239783, lonWidth: 12
-};
+// --- PERSISTENCE & URL LOGIC ---
+function getInitialView() {
+    // Get the part after the '?' (e.g., "@46.122053,-69.532545,437068m")
+    const searchString = window.location.search;
 
+    // Regex matches @lat,lon and optionally ,widthm
+    const match = searchString.match(/@([\d.-]+),([\d.-]+)(?:,(\d+)m)?/);
+
+    if (match) {
+        const lat = parseFloat(match[1]);
+        const lon = parseFloat(match[2]);
+        // Default to 1000m if width is missing from the URL
+        const widthMeters = match[3] ? parseFloat(match[3]) : 1000;
+
+        // Convert meters back to lonWidth
+        const latRad = lat * Math.PI / 180;
+        const metersPerDegreeLon = 111120 * Math.cos(latRad);
+        const lonWidth = widthMeters / (0.7 * metersPerDegreeLon);
+
+        return { lat, lon, lonWidth };
+    }
+
+    // Fallback to localStorage or defaults if URL has no bookmark
+    return JSON.parse(localStorage.getItem('mapView')) || {
+        lat: 45.624897, lon: -75.239783, lonWidth: 12
+    };
+}
+
+// Replace the old 'const savedView' and 'let view' block with this:
 let view = {
-    ...savedView,
-    dragging: false, dragStart: { x: 0, y: 0 }, dragOffset: { x: 0, y: 0 }
+    ...getInitialView(),
+    dragging: false,
+    dragStart: { x: 0, y: 0 },
+    dragOffset: { x: 0, y: 0 }
 };
 
 function saveView() {
+    // Calculate width in meters
+    const latRad = view.lat * Math.PI / 180;
+    const metersPerDegreeLon = 111120 * Math.cos(latRad);
+    const widthInMeters = Math.round(view.lonWidth * 0.7 * metersPerDegreeLon);
+
+    // Update localStorage for persistence
     localStorage.setItem('mapView', JSON.stringify({
         lat: view.lat,
         lon: view.lon,
         lonWidth: view.lonWidth
     }));
+
+    // Construct the new URL parameter string
+    const locValue = `?@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${widthInMeters}m`;
+    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + locValue;
+
+    // Update the address bar without reloading
+    history.replaceState(null, '', newUrl);
 }
 
 // --- DATA LOADING ---
@@ -87,6 +126,8 @@ function parseData(text) {
     }
 }
 
+
+
 // --- DRAWING & CLUSTERING ---
 function project(lat, lon) {
     const scale = (canvas.width / view.lonWidth);
@@ -99,8 +140,8 @@ function unproject(x, y) {
 }
 
 function updateVisibleData() {
-    if (images.length === 0) return;
     saveView();
+    if (images.length === 0) return;
     const b1 = unproject(-20, -20);
     const b2 = unproject(canvas.width + 20, canvas.height + 20);
     visibleImages = images.filter(img =>
