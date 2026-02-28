@@ -71,7 +71,6 @@ function getInitialView() {
     };
 }
 
-// Replace the old 'const savedView' and 'let view' block with this:
 let view = {
     ...getInitialView(),
     dragging: false,
@@ -79,6 +78,7 @@ let view = {
     dragOffset: { x: 0, y: 0 }
 };
 
+let locValue = ""
 function saveView() {
     // Calculate width in meters
     const latRad = view.lat * Math.PI / 180;
@@ -93,8 +93,8 @@ function saveView() {
     }));
 
     // Construct the new URL parameter string
-    const locValue = `?@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${widthInMeters}m`;
-    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + locValue;
+    locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${widthInMeters}m`;
+    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname +"?"+ locValue;
 
     // Update the address bar without reloading
     history.replaceState(null, '', newUrl);
@@ -240,30 +240,62 @@ function draw() {
     drawScaleBar(visibleImages.length);
 }
 
+// Global to store the map button bounds and current view width
+let mapButtonRect = { x: 0, y: 0, w: 0, h: 0 };
+let currentWidthMeters = 1000;
+
 function drawScaleBar(count) {
     const latRad = view.lat * Math.PI / 180;
     const metersPerDegreeLon = 111120 * Math.cos(latRad);
     const pixelsPerDegreeLon = (canvas.width / view.lonWidth) * 0.7;
     const metersPerPixel = metersPerDegreeLon / pixelsPerDegreeLon;
+
+    // Total width of the view in meters
+    currentWidthMeters = Math.round(canvas.width * metersPerPixel);
+
     const maxBarWidth = 300;
     const maxMeters = maxBarWidth * metersPerPixel;
     const steps = [1, 2, 5];
     let mag = Math.pow(10, Math.floor(Math.log10(maxMeters)));
     let bestMeters = 0;
-    for (let i = 2; i >= 0; i--) { let test = steps[i] * mag; if (test <= maxMeters) { bestMeters = test; break; } }
+    for (let i = 2; i >= 0; i--) {
+        let test = steps[i] * mag;
+        if (test <= maxMeters) { bestMeters = test; break; }
+    }
     if (bestMeters === 0) bestMeters = mag / 2;
     const barWidth = bestMeters / metersPerPixel;
     const label = bestMeters >= 1000 ? (bestMeters / 1000) + " km" : bestMeters + " m";
 
     const x = 20, y = 30;
     ctx.save(); ctx.resetTransform();
+
+    // Draw Scale Line
     ctx.strokeStyle = "white"; ctx.fillStyle = "white"; ctx.lineWidth = 2; ctx.font = "bold 14px sans-serif";
     ctx.beginPath(); ctx.moveTo(x, y-5); ctx.lineTo(x, y+5); ctx.moveTo(x, y); ctx.lineTo(x+barWidth, y); ctx.moveTo(x+barWidth, y-5); ctx.lineTo(x+barWidth, y+5); ctx.stroke();
     ctx.textAlign = "center"; ctx.fillText(label, x + (barWidth / 2), y - 10);
     ctx.textAlign = "left"; ctx.font = "13px sans-serif"; ctx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 25);
+
+    // Draw "Map" Button
+    const btnX = x + barWidth + 20;
+    const btnY = y - 12;
+    const btnW = 45;
+    const btnH = 22;
+    mapButtonRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+    ctx.fillStyle = "#00a000"; // Green background
+    ctx.fillRect(btnX, btnY, btnW, btnH);
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(btnX, btnY, btnW, btnH);
+
+    ctx.fillStyle = "white"; // Black text
+    ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("Map", btnX + (btnW / 2), btnY + (btnH / 2));
+
     ctx.restore();
 }
-
 function getThumbPath(fullPath) {
     let p = fullPath.replace(/\\/g, '/');
     let parts = p.split('/');
@@ -294,11 +326,55 @@ function updateOverlay(img) {
     infoText.appendChild(document.createTextNode(`\nCamera: ${img.camera}`));
 }
 
+
+// Prevent default to allow drop
+window.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+});
+
+window.addEventListener('drop', e => {
+    e.preventDefault();
+
+    // Get the dropped data (usually a URL)
+    const droppedData = e.dataTransfer.getData('text/plain');
+    if (!droppedData) return;
+
+    // Use a regex to find the @lat,lon,zoom or @lat,lon,widthm pattern
+    // This handles both Google Maps URLs and your own format
+    const match = droppedData.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
+
+    if (!match) return;
+    const lat = parseFloat(match[1]);
+    const lon = parseFloat(match[2]);
+    const widthMeters = match[3] ? parseFloat(match[3]) : 1000;
+
+    // Apply to the view
+    view.lat = lat;
+    view.lon = lon;
+
+    // Convert width back to your internal lonWidth
+    const latRad = lat * Math.PI / 180;
+    const metersPerDegreeLon = 111120 * Math.cos(latRad);
+    view.lonWidth = widthMeters / (0.7 * metersPerDegreeLon);
+
+    updateVisibleData();     // Refresh the view
+
+});
+
 const handleStart = (x, y, isTouch) => {
+    // Check for Map Button Click, open google maps to same location and zoom level.
+    if (x >= mapButtonRect.x && x <= mapButtonRect.x + mapButtonRect.w &&
+        y >= mapButtonRect.y && y <= mapButtonRect.y + mapButtonRect.h) {
+
+        const googleMapsUrl = `https://www.google.com/maps/${locValue}`;
+        window.open(googleMapsUrl, '_blank');
+        return;
+    }
+
     const r = uiOverlay.getBoundingClientRect();
     if (uiOverlay.style.display !== 'none' && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return;
 
-    // Threshold for interaction (larger for touch)
     const t = isTouch ? 30 : 10;
     const target = findNearestImage(x, y, t);
 
@@ -310,11 +386,10 @@ const handleStart = (x, y, isTouch) => {
         selectedImage = null;
         view.dragging = true;
         view.dragStart = { x, y };
-        // Only hide the overlay if we didn't just click on a dot
         if (!findNearestImage(x, y, t)) uiOverlay.style.display = 'none';
+        draw(); // Redraw to clear the red selection circle
     }
 };
-
 const handleMove = (x, y, isTouch) => {
     if (view.dragging) {
         view.dragOffset.x = x - view.dragStart.x;
