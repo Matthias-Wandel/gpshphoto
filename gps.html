@@ -9,14 +9,14 @@
         canvas { display: block; cursor: default; }
 
         #ui-overlay {
-            position: absolute; top: 10px; right: 10px; width: 400px;
+            position: absolute; top: 10px; right: 10px; width: 320px;
             background: rgba(255, 255, 255, 0.95); padding: 12px;
             border-radius: 8px; display: none;
             pointer-events: auto;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #ccc;
             z-index: 1000;
         }
-        #preview-img { width: 400px; height: 300px; object-fit: contain; background: #111; border-radius: 4px; cursor: pointer; }
+        #preview-img { width: 320px; height: 240px; object-fit: contain; background: #111; border-radius: 4px; cursor: pointer; }
         #info-text { margin-top: 10px; font-size: 13px; color: #111; line-height: 1.5; white-space: pre-wrap; }
         .link-text { cursor: pointer; color: #0056b3; text-decoration: underline; padding: 2px 0; display: inline-block; }
     </style>
@@ -27,6 +27,20 @@
     <img id="preview-img" alt="Preview">
     <div id="info-text"></div>
 </div>
+
+<canvas id="mapCanvas"></canvas>
+
+
+<div id="ui-overlay">...</div>
+
+<a id="map-link" target="_blank" style="
+    position: absolute; top: 18px; left: 0;
+    background: #00a000; color: white;
+    padding: 2px 8px; border-radius: 2px;
+    text-decoration: none; font-family: sans-serif;
+    font-size: 14px; border: 1px solid white;
+    z-index: 500; display: none;
+">Map</a>
 
 <canvas id="mapCanvas"></canvas>
 
@@ -78,7 +92,6 @@ let view = {
     dragOffset: { x: 0, y: 0 }
 };
 
-let locValue = ""
 function saveView() {
     // Calculate width in meters
     const latRad = view.lat * Math.PI / 180;
@@ -92,12 +105,15 @@ function saveView() {
         lonWidth: view.lonWidth
     }));
 
-    // Construct the new URL parameter string
-    locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${widthInMeters}m`;
+    let locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${widthInMeters}m`;
     const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname +"?"+ locValue;
-
-    // Update the address bar without reloading
     history.replaceState(null, '', newUrl);
+
+    // Update the physical <a> tag
+    const mapLink = document.getElementById('map-link');
+    if (mapLink) {
+        mapLink.href = `https://www.google.com/maps/${locValue}`;
+    }
 }
 
 // --- DATA LOADING ---
@@ -275,24 +291,13 @@ function drawScaleBar(count) {
     ctx.textAlign = "center"; ctx.fillText(label, x + (barWidth / 2), y - 10);
     ctx.textAlign = "left"; ctx.font = "13px sans-serif"; ctx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 25);
 
-    // Draw "Map" Button
-    const btnX = x + barWidth + 20;
-    const btnY = y - 12;
-    const btnW = 45;
-    const btnH = 22;
-    mapButtonRect = { x: btnX, y: btnY, w: btnW, h: btnH };
-
-    ctx.fillStyle = "#00a000"; // Green background
-    ctx.fillRect(btnX, btnY, btnW, btnH);
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(btnX, btnY, btnW, btnH);
-
-    ctx.fillStyle = "white"; // Black text
-    ctx.font = "14px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("Map", btnX + (btnW / 2), btnY + (btnH / 2));
+    // Position the HTML anchor tag dynamically
+    const mapLink = document.getElementById('map-link');
+    if (mapLink) {
+        const btnX = x + barWidth + 20;
+        mapLink.style.left = btnX + "px";
+        mapLink.style.display = 'block'; // Show it once calculated
+    }
 
     ctx.restore();
 }
@@ -363,15 +368,6 @@ window.addEventListener('drop', e => {
 });
 
 const handleStart = (x, y, isTouch) => {
-    // Check for Map Button Click, open google maps to same location and zoom level.
-    if (x >= mapButtonRect.x && x <= mapButtonRect.x + mapButtonRect.w &&
-        y >= mapButtonRect.y && y <= mapButtonRect.y + mapButtonRect.h) {
-
-        const googleMapsUrl = `https://www.google.com/maps/${locValue}`;
-        window.open(googleMapsUrl, '_blank');
-        return;
-    }
-
     const r = uiOverlay.getBoundingClientRect();
     if (uiOverlay.style.display !== 'none' && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return;
 
