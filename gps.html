@@ -140,6 +140,7 @@ function parseData(text) {
         const m = gl.match(/GPS:\s*([\d.-]+),\s*([\d.-]+)/);
         if (m) images.push({ path, dateTime: dtl, lat: parseFloat(m[1]), lon: parseFloat(m[2]), camera: cl || "Unknown" });
     }
+    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.dateTime - b.dateTime ||  a.camera - b.camera);
 }
 
 
@@ -155,15 +156,43 @@ function unproject(x, y) {
     return { lon: (x - (canvas.width / 2)) / (0.7 * scale) + view.lon, lat: view.lat - (y - (canvas.height / 2)) / scale };
 }
 
+function findFirstLongitudeIndex(targetLon)
+{   // Does a binary search on the while image list to find a particular latitude.
+    let low = 0;
+    let high = images.length;
+    while (low < high) {
+        let mid = (low + high) >>> 1;
+        if (images[mid].lon < targetLon) low = mid + 1;
+        else high = mid;
+    }
+    return low;
+}
+
 function updateVisibleData() {
     saveView();
     if (images.length === 0) return;
     const b1 = unproject(-20, -20);
     const b2 = unproject(canvas.width + 20, canvas.height + 20);
-    visibleImages = images.filter(img =>
-        img.lat >= Math.min(b1.lat, b2.lat) && img.lat <= Math.max(b1.lat, b2.lat) &&
-        img.lon >= Math.min(b1.lon, b2.lon) && img.lon <= Math.max(b1.lon, b2.lon)
-    );
+
+    const maxLat = b1.lat;
+    const minLat = b2.lat;
+    const minLon = b1.lon;
+    const maxLon = b2.lon;
+
+    // Longitude range to filter by
+    const startIndex = findFirstLongitudeIndex(minLon)
+    const endIndex = findFirstLongitudeIndex(maxLon)
+    if (endIndex < images.len) endIndex += 1
+
+    visibleImages = [];
+    for (let i = startIndex; i < endIndex; i++) {
+        const img = images[i];
+        // Filter by Latutude (already have looping over right longitude range)
+        if (img.lat >= minLat && img.lat <= maxLat) {
+            visibleImages.push(img);
+        }
+    }
+    console.log(`Slice: ${endIndex - startIndex} show: ${visibleImages.length}`);
 
     const latRad = view.lat * Math.PI / 180;
     const metersPerDegreeLon = 111120 * Math.cos(latRad);
@@ -180,7 +209,7 @@ function updateVisibleData() {
 
         if (useJitter){
             // For very zoomed in, use image timestamp to add random small jitter to
-            // coordinates so they don't all end up on teh same spot (and mouse inaccessible)
+            // coordinates so they don't all end up on the same spot (and mouse inaccessible)
             const parts = img.dateTime.split(' ');
 
             if (parts.length === 2) {
@@ -201,12 +230,10 @@ function updateVisibleData() {
     clusters = [];
     const baseRadius = 3;
     visibleImages.forEach(img => {
-        //const pos = project(img.lat, img.lon);
         const pos = project(img.dispLat, img.dispLon);
         let merged = false;
 
-        if (useJitter){
-        }else{
+        if (!useJitter){
         for (let c of clusters) {
             const d = Math.sqrt((pos.x - c.x)**2 + (pos.y - c.y)**2);
             if (d < c.radius*1.5) {
@@ -433,8 +460,13 @@ canvas.addEventListener('touchmove', e => {
     else if (e.touches.length === 2) {
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const b = unproject(mx, my); view.lonWidth = iS * (iD / d); const a = unproject(mx, my);
-        view.lon += (b.lon - a.lon); view.lat += (b.lat - a.lat); updateVisibleData();
+        const b = unproject(mx, my);
+        view.lonWidth = iS * (iD / d);
+        if (view.lonWidth < 0.00005) view.lonWidth = 0.00005
+        const a = unproject(mx, my);
+        view.lon += (b.lon - a.lon);
+        view.lat += (b.lat - a.lat);
+        updateVisibleData();
     }
 }, {passive: false});
 canvas.addEventListener('touchend', handleEnd);
@@ -443,6 +475,9 @@ canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const b = unproject(e.clientX, e.clientY);
     view.lonWidth *= (e.deltaY > 0 ? 1.1 : 0.9);
+    if (view.lonWidth < 0.00005) view.lonWidth = 0.00005
+
+
     const a = unproject(e.clientX, e.clientY);
     view.lon += (b.lon - a.lon); view.lat += (b.lat - a.lat);
     updateVisibleData();
@@ -455,7 +490,7 @@ function findNearestImage(x, y, threshold) {
 
     // Using visibleImages here makes mouse interactions much faster
     visibleImages.forEach(img => {
-        pos = project(img.dispLat, img.dispLon);
+        const pos = project(img.dispLat, img.dispLon);
 
         const d = Math.sqrt((pos.x - x)**2 + (pos.y - y)**2);
         if (d < minDist) {
