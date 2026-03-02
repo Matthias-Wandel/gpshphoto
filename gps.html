@@ -234,23 +234,70 @@ function updateVisibleData() {
         let merged = false;
 
         if (!useJitter){
-        for (let c of clusters) {
-            const d = Math.sqrt((pos.x - c.x)**2 + (pos.y - c.y)**2);
-            if (d < c.radius*1.5) {
-                const w = c.count + 1;
-                c.lat = (c.lat * c.count + img.dispLat) / w;
-                c.lon = (c.lon * c.count + img.dispLon) / w;
-                const nPos = project(c.lat, c.lon);
-                c.x = nPos.x; c.y = nPos.y;
-                c.count++;
-                c.radius = c.count > 3 ? baseRadius * Math.pow(c.count / 3, 1/3) : baseRadius;
-                merged = true; break;
+            for (let i = clusters.length - 1; i >= 0; i--) {
+                const c = clusters[i];
+                if (pos.x - c.x > 50){
+                    // Clusters end up naturally longitude sorted.  Looking too far left won't find any usable cluster.
+                    break;
+                }
+                const d = Math.sqrt((pos.x - c.x)**2 + (pos.y - c.y)**2);
+                if (d < c.radius*1.1) {
+                    const w = c.count + 1;
+                    c.lat = (c.lat * c.count + img.dispLat) / w;
+                    c.lon = (c.lon * c.count + img.dispLon) / w;
+                    const nPos = project(c.lat, c.lon);
+                    c.x = nPos.x; c.y = nPos.y;
+                    c.count++;
+                    c.radius = c.count > 3 ? baseRadius * Math.pow(c.count / 3, 1/3) : baseRadius;
+                    merged = true; break;
+                }
             }
-        }
         }
 
         if (!merged) clusters.push({ x: pos.x, y: pos.y, lat: img.lat, lon: img.lon, count: 1, radius: baseRadius });
     });
+
+    // If a closter has grown large enough, it might have swallwed previous clusters to its left
+    // that were created before the cluster grew that big.  Iterate right to left
+    // to see if large clusters swallo smaller clusters and absorb them.
+    if (!useJitter) {
+        for (let i = clusters.length - 1; i >= 0; i--) {
+            const cMain = clusters[i];
+
+            // Check clusters to the left of cMain
+            for (let j = i - 1; j >= 0; j--) {
+                const cLeft = clusters[j];
+
+                // Since they are longitude sorted, if the X distance is
+                // greater than the combined radii, we can stop looking left.
+                if (cMain.x - cLeft.x > (cMain.radius + cLeft.radius) * 1.5) break;
+
+                const d = Math.sqrt((cMain.x - cLeft.x)**2 + (cMain.y - cLeft.y)**2);
+
+                // If they overlap (using a 1.1x multiplier for a cleaner look)
+                if (d < (cMain.radius + cLeft.radius) * 0.8) {
+                    const totalCount = cMain.count + cLeft.count;
+
+                    // Weighted average for new position
+                    cMain.lat = (cMain.lat * cMain.count + cLeft.lat * cLeft.count) / totalCount;
+                    cMain.lon = (cMain.lon * cMain.count + cLeft.lon * cLeft.count) / totalCount;
+
+                    const nPos = project(cMain.lat, cMain.lon);
+                    cMain.x = nPos.x;
+                    cMain.y = nPos.y;
+                    cMain.count = totalCount;
+
+                    // Recalculate radius based on new count
+                    cMain.radius = cMain.count > 3 ? baseRadius * Math.pow(cMain.count / 3, 1/3) : baseRadius;
+
+                    clusters.splice(j, 1); // Remove the merged cluster from the left
+
+                    i--;  // Adjust 'i' because the array just got shorter
+                }
+            }
+        }
+    }
+
     draw();
 }
 
