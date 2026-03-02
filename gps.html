@@ -199,29 +199,30 @@ function updateVisibleData() {
     const pixelsPerDegreeLon = (canvas.width / view.lonWidth) * 0.7;
     const pixelsPerMeter = pixelsPerDegreeLon / metersPerDegreeLon;
 
-    const useJitter = pixelsPerMeter > 30;
+    const useJitter = pixelsPerMeter > 60;
 
+    const spacing = 0.0000004;
+    let  prevLat = 0
+    let  prevLon = 0
+    let  onCount = 0
 
-    const spacing = 0.00000005;
     visibleImages.forEach(img => {
         img.dispLat = img.lat; // Coordinates to use for display
         img.dispLon = img.lon;
 
         if (useJitter){
-            // For very zoomed in, use image timestamp to add random small jitter to
-            // coordinates so they don't all end up on the same spot (and mouse inaccessible)
-            const parts = img.dateTime.split(' ');
+            if  (prevLon == img.lon && prevLat == img.lat){
+                // If it coincides with other images, spread them out over a 7x7 grid.
+                // don't repeat positions until after 49 of them.
+                onCount = (onCount+23) % 49
+                img.dispLat += (Math.trunc(onCount/7)-3) * spacing;
+                img.dispLon += (onCount%7 -3) * spacing*2;
 
-            if (parts.length === 2) {
-                const timeParts = parts[1].split(':');
-                if (timeParts.length === 3) {
-                    const seconds = parseInt(timeParts[2])
-                    const minutes = parseInt(timeParts[1])
-                    if (!isNaN(seconds) && !isNaN(minutes)) {
-                        img.dispLat += (minutes - 30) * spacing;
-                        img.dispLon += (seconds - 30) * spacing*2;
-                    }
-                }
+            }else{
+                console.log("---")
+                prevLat = img.lat
+                prevLon = img.lon
+                onCount = 24
             }
         }
     })
@@ -237,7 +238,8 @@ function updateVisibleData() {
             for (let i = clusters.length - 1; i >= 0; i--) {
                 const c = clusters[i];
                 if (pos.x - c.x > 50){
-                    // Clusters end up naturally longitude sorted.  Looking too far left won't find any usable cluster.
+                    // Clusters end up naturally longitude sorted.  Looking further left
+                    // won't find a cluster to combine with
                     break;
                 }
                 const d = Math.sqrt((pos.x - c.x)**2 + (pos.y - c.y)**2);
