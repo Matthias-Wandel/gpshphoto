@@ -138,12 +138,46 @@ function parseData(text) {
         let gl = (lines[++i] || "");
         let cl = (lines[++i] || "").replace('Camera: ', '').trim();
         const m = gl.match(/GPS:\s*([\d.-]+),\s*([\d.-]+)/);
-        if (m) images.push({ path, dateTime: dtl, lat: parseFloat(m[1]), lon: parseFloat(m[2]), camera: cl || "Unknown" });
+        if (m) images.push({ path, dateTime: dtl, lat: parseFloat(m[1]), lon: parseFloat(m[2]), camera: cl || "Unknown",hl:0 });
     }
-    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.dateTime - b.dateTime ||  a.camera - b.camera);
+    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera - b.camera || a.dateTime - b.dateTime);
+    hilightSuspectCoordinates();
 }
 
+function hilightSuspectCoordinates()
+{
+    // Highlight suspiciously same coordinates from same device.
+    function DaySeconds(dateTime) // compute seconds since midnight.
+    {
+        const timePart = dateTime.split(' ')[1];
+        const [h, m, s] = timePart.split(':').map(Number);
+        const DaySeconds = (h * 3600) + (m * 60) + s;
 
+        console.log(dateTime,"===>",DaySeconds);
+        return DaySeconds
+    }
+
+    for (let n = 0; n < images.length-1;) {
+        let lat = images[n].lat
+        let x = n+1
+        // Find runs of same coordinate by same camera on same date.
+        for (; x < images.length;) {
+            if (lat != images[x].lat) break // coordinates the same.
+            if (images[n].lon != images[x].lon) break
+            if (images[n].dateTime.substring(0,10) != images[x].dateTime.substring(0,10)) break // same date
+            if (images[n].camera != images[x].camera) break; // Same camera
+            x += 1
+        }
+
+        if (x >= n+4){ // Min cluster of 4
+            let Tn = DaySeconds(images[n].dateTime)
+            let Tx = DaySeconds(images[x-1].dateTime)
+            if (Tx-Tn > 600) // Min time elapsed of 10 minutes
+                for (let y=n;y<x;y++) images[y].hl = 1 // Highlight the series
+        }
+        n = x; // Skip over identical group just identified
+    }
+}
 
 // --- DRAWING & CLUSTERING ---
 function project(lat, lon) {
@@ -200,7 +234,6 @@ function updateVisibleData() {
     const pixelsPerMeter = pixelsPerDegreeLon / metersPerDegreeLon;
 
     const useJitter = pixelsPerMeter > 60;
-
     const spacing = 0.0000004;
     let  prevLat = 0
     let  prevLon = 0
@@ -214,15 +247,16 @@ function updateVisibleData() {
             if  (prevLon == img.lon && prevLat == img.lat){
                 // If it coincides with other images, spread them out over a 7x7 grid.
                 // don't repeat positions until after 49 of them.
-                onCount = (onCount+23) % 49
-                img.dispLat += (Math.trunc(onCount/7)-3) * spacing;
-                img.dispLon += (onCount%7 -3) * spacing*2;
+                onCount = (onCount+46+1/49) % 98
+                img.dispLat += (Math.trunc(onCount/14)-3) * spacing;
+                img.dispLon += (onCount%14 -6) * spacing
+                //if (onCount == 23+24) img.highlight = 1
 
             }else{
                 console.log("---")
                 prevLat = img.lat
                 prevLon = img.lon
-                onCount = 24
+                onCount = 48
             }
         }
     })
@@ -234,7 +268,7 @@ function updateVisibleData() {
         const pos = project(img.dispLat, img.dispLon);
         let merged = false;
 
-        if (!useJitter){
+        if (!useJitter){ // Only cluster if we aren't zoomed in enough to use jitter
             for (let i = clusters.length - 1; i >= 0; i--) {
                 const c = clusters[i];
                 if (pos.x - c.x > 50){
@@ -251,12 +285,15 @@ function updateVisibleData() {
                     c.x = nPos.x; c.y = nPos.y;
                     c.count++;
                     c.radius = c.count > 3 ? baseRadius * Math.pow(c.count / 3, 1/3) : baseRadius;
-                    merged = true; break;
+                    c.hl += img.hl
+                    merged = true;
+                    break;
                 }
             }
         }
 
-        if (!merged) clusters.push({ x: pos.x, y: pos.y, lat: img.lat, lon: img.lon, count: 1, radius: baseRadius });
+        if (!merged)
+            clusters.push({ x: pos.x, y: pos.y, lat: img.lat, lon: img.lon, count: 1, hl:img.hl, radius: baseRadius });
     });
 
     // If a closter has grown large enough, it might have swallwed previous clusters to its left
@@ -289,6 +326,8 @@ function updateVisibleData() {
                     cMain.y = nPos.y;
                     cMain.count = totalCount;
 
+                    cMain.hl += cLeft.hl
+
                     // Recalculate radius based on new count
                     cMain.radius = cMain.count > 3 ? baseRadius * Math.pow(cMain.count / 3, 1/3) : baseRadius;
 
@@ -314,7 +353,11 @@ function draw() {
         if (c.count >= 3) alpha = 0.77;
 
         ctx.globalCompositeOperation = 'lighter';
-        ctx.fillStyle = `rgba(30, 144, 255, ${alpha})`;
+        if (c.hl)
+            ctx.fillStyle = `rgba(255, 255, 144, 1)`;
+        else
+            ctx.fillStyle = `rgba(30, 144, 255, ${alpha})`;
+
         ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = `rgba(255, 255, 255, 0.08)`; ctx.fill();
     });
