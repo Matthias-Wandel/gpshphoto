@@ -141,9 +141,9 @@ function parseData(text) {
         if (m) images.push({ path, dateTime: dtl, lat: parseFloat(m[1]), lon: parseFloat(m[2]), camera: cl || "Unknown",hl:0 });
     }
     images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera - b.camera || a.dateTime - b.dateTime);
-    hilightSuspectCoordinates();
+    //hilightSuspectCoordinates();
 }
-
+/*
 function hilightSuspectCoordinates()
 {
     // Highlight suspiciously same coordinates from same device.
@@ -169,7 +169,7 @@ function hilightSuspectCoordinates()
             x += 1
         }
 
-        if (x >= n+4){ // Min cluster of 4
+        if (x >= n+3){ // Min cluster of 3
             let Tn = DaySeconds(images[n].dateTime)
             let Tx = DaySeconds(images[x-1].dateTime)
             if (Tx-Tn > 600) // Min time elapsed of 10 minutes
@@ -178,19 +178,19 @@ function hilightSuspectCoordinates()
         n = x; // Skip over identical group just identified
     }
 }
-
+*/
 // --- DRAWING & CLUSTERING ---
-function project(lat, lon) {
+function latLon2xy(lat, lon) {
     const scale = (canvas.width / view.lonWidth);
     return { x: (lon - view.lon) * 0.7 * scale + (canvas.width / 2), y: canvas.height / 2 - (lat - view.lat) * scale };
 }
 
-function unproject(x, y) {
+function xy2latLon(x, y) {
     const scale = (canvas.width / view.lonWidth);
     return { lon: (x - (canvas.width / 2)) / (0.7 * scale) + view.lon, lat: view.lat - (y - (canvas.height / 2)) / scale };
 }
 
-function findFirstLongitudeIndex(targetLon)
+function findFirstLongitudeIndex(images, targetLon)
 {   // Does a binary search on the while image list to find a particular latitude.
     let low = 0;
     let high = images.length;
@@ -205,8 +205,8 @@ function findFirstLongitudeIndex(targetLon)
 function updateVisibleData() {
     saveView();
     if (images.length === 0) return;
-    const b1 = unproject(-20, -20);
-    const b2 = unproject(canvas.width + 20, canvas.height + 20);
+    const b1 = xy2latLon(-20, -20);
+    const b2 = xy2latLon(canvas.width + 20, canvas.height + 20);
 
     const maxLat = b1.lat;
     const minLat = b2.lat;
@@ -214,8 +214,8 @@ function updateVisibleData() {
     const maxLon = b2.lon;
 
     // Longitude range to filter by
-    const startIndex = findFirstLongitudeIndex(minLon)
-    const endIndex = findFirstLongitudeIndex(maxLon)
+    const startIndex = findFirstLongitudeIndex(images, minLon)
+    const endIndex = findFirstLongitudeIndex(images, maxLon)
     if (endIndex < images.len) endIndex += 1
 
     visibleImages = [];
@@ -244,28 +244,26 @@ function updateVisibleData() {
         img.dispLon = img.lon;
 
         if (useJitter){
-            if  (prevLon == img.lon && prevLat == img.lat){
-                // If it coincides with other images, spread them out over a 7x7 grid.
-                // don't repeat positions until after 49 of them.
-                onCount = (onCount+46+1/49) % 98
-                img.dispLat += (Math.trunc(onCount/14)-3) * spacing;
-                img.dispLon += (onCount%14 -6) * spacing
-                //if (onCount == 23+24) img.highlight = 1
-
+            if  (prevLat == img.lat && prevLon == img.lon){
+                // If it coincides with other images, spread them
+                // by spiraling outwards.
+                onCount += 1
+                let rad = Math.sqrt((onCount^13)+0.5)
+                let theta = 4*rad
+                img.dispLat += Math.cos(theta)*rad*spacing
+                img.dispLon += Math.sin(theta)*rad*spacing*1.4
             }else{
-                console.log("---")
                 prevLat = img.lat
                 prevLon = img.lon
-                onCount = 48
+                onCount = 0
             }
         }
     })
 
-
     clusters = [];
     const baseRadius = 3;
     visibleImages.forEach(img => {
-        const pos = project(img.dispLat, img.dispLon);
+        const pos = latLon2xy(img.dispLat, img.dispLon);
         let merged = false;
 
         if (!useJitter){ // Only cluster if we aren't zoomed in enough to use jitter
@@ -281,7 +279,7 @@ function updateVisibleData() {
                     const w = c.count + 1;
                     c.lat = (c.lat * c.count + img.dispLat) / w;
                     c.lon = (c.lon * c.count + img.dispLon) / w;
-                    const nPos = project(c.lat, c.lon);
+                    const nPos = latLon2xy(c.lat, c.lon);
                     c.x = nPos.x; c.y = nPos.y;
                     c.count++;
                     c.radius = c.count > 3 ? baseRadius * Math.pow(c.count / 3, 1/3) : baseRadius;
@@ -296,9 +294,9 @@ function updateVisibleData() {
             clusters.push({ x: pos.x, y: pos.y, lat: img.lat, lon: img.lon, count: 1, hl:img.hl, radius: baseRadius });
     });
 
-    // If a closter has grown large enough, it might have swallwed previous clusters to its left
+    // If a cluster has grown large enough, it might have swallwed previous clusters to its left
     // that were created before the cluster grew that big.  Iterate right to left
-    // to see if large clusters swallo smaller clusters and absorb them.
+    // to see if large clusters swallow smaller older clusters to the left.
     if (!useJitter) {
         for (let i = clusters.length - 1; i >= 0; i--) {
             const cMain = clusters[i];
@@ -321,7 +319,7 @@ function updateVisibleData() {
                     cMain.lat = (cMain.lat * cMain.count + cLeft.lat * cLeft.count) / totalCount;
                     cMain.lon = (cMain.lon * cMain.count + cLeft.lon * cLeft.count) / totalCount;
 
-                    const nPos = project(cMain.lat, cMain.lon);
+                    const nPos = latLon2xy(cMain.lat, cMain.lon);
                     cMain.x = nPos.x;
                     cMain.y = nPos.y;
                     cMain.count = totalCount;
@@ -364,7 +362,7 @@ function draw() {
 
     if (currentPreview) {
         ctx.globalCompositeOperation = 'source-over';
-        const p = project(currentPreview.dispLat, currentPreview.dispLon);
+        const p = latLon2xy(currentPreview.dispLat, currentPreview.dispLon);
         if (currentPreview === selectedImage) {
             ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
             ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2); ctx.stroke();
@@ -552,10 +550,10 @@ canvas.addEventListener('touchmove', e => {
     else if (e.touches.length === 2) {
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const b = unproject(mx, my);
+        const b = xy2latLon(mx, my);
         view.lonWidth = iS * (iD / d);
         if (view.lonWidth < 0.00005) view.lonWidth = 0.00005
-        const a = unproject(mx, my);
+        const a = xy2latLon(mx, my);
         view.lon += (b.lon - a.lon);
         view.lat += (b.lat - a.lat);
         updateVisibleData();
@@ -565,31 +563,88 @@ canvas.addEventListener('touchend', handleEnd);
 
 canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    const b = unproject(e.clientX, e.clientY);
+    const b = xy2latLon(e.clientX, e.clientY);
     view.lonWidth *= (e.deltaY > 0 ? 1.1 : 0.9);
     if (view.lonWidth < 0.00005) view.lonWidth = 0.00005
 
 
-    const a = unproject(e.clientX, e.clientY);
+    const a = xy2latLon(e.clientX, e.clientY);
     view.lon += (b.lon - a.lon); view.lat += (b.lat - a.lat);
     updateVisibleData();
 }, { passive: false });
 
 // Optimized to search only images currently in view
-function findNearestImage(x, y, threshold) {
+function old_findNearestImage(x, y, threshold) {
     let nearest = null;
     let minDist = threshold;
+    let checked = 0
 
     // Using visibleImages here makes mouse interactions much faster
     visibleImages.forEach(img => {
-        const pos = project(img.dispLat, img.dispLon);
+        const pos = latLon2xy(img.dispLat, img.dispLon);
 
         const d = Math.sqrt((pos.x - x)**2 + (pos.y - y)**2);
+
         if (d < minDist) {
             minDist = d;
             nearest = img;
         }
+        checked += 1
     });
+    console.log("checked",checked);
+    return nearest;
+}
+function findNearestImage(x, y, threshold)
+{
+    if (visibleImages.length === 0) return null;
+
+    const mouseLon = xy2latLon(x, y).lon;
+    const startIndex = findFirstLongitudeIndex(visibleImages, mouseLon);
+
+    let nearest = null;
+    let minDist = threshold;
+
+    // index[0] is searching left, index[1] is searching right
+    let indices = [startIndex - 1, startIndex];
+    let done = [false, false];
+
+    // Scan until both sides hit their bounds or distance limit
+    while (!done[0] || !done[1]) {
+        for (let i = 0; i < 2; i++) {
+            if (done[i]) continue;
+
+            const idx = indices[i];
+
+            // Bounds check
+            if (idx < 0 || idx >= visibleImages.length) {
+                done[i] = true;
+                continue;
+            }
+
+            const img = visibleImages[idx];
+            const pos = latLon2xy(img.dispLat, img.dispLon);
+
+            // Horizontal distance check (early exit for sorted list)
+            if (Math.abs(pos.x - x) > minDist) {
+                done[i] = true;
+                continue;
+            }
+
+            // First check bounding box
+            if (Math.abs(pos.y-y) < minDist){
+
+                // Full Euclidean distance check
+                const d = Math.sqrt((pos.x - x)**2 + (pos.y - y)**2);
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = img;
+                }
+            }
+
+            // Update index: i=0 moves left (-1), i=1 moves right (+1)
+            indices[i] += (i === 0 ? -1 : 1);
+        }
+    }
     return nearest;
 }
 
