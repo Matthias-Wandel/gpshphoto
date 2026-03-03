@@ -186,16 +186,6 @@ function xy2latLon(x, y) {
     return { lon: (x - (canvas.width / 2)) / (0.7 * scale) + view.lon, lat: view.lat - (y - (canvas.height / 2)) / scale };
 }
 
-function findFirstLongitudeIndex(arr, targetLon) {
-    let low = 0;
-    let high = arr.length;
-    while (low < high) {
-        let mid = (low + high) >>> 1;
-        if (arr[mid].lon < targetLon) low = mid + 1;
-        else high = mid;
-    }
-    return low;
-}
 
 // --- DRAWING & CLUSTERING ---
 function updateVisibleData() {
@@ -209,9 +199,20 @@ function updateVisibleData() {
     const minLon = b1.lon;
     const maxLon = b2.lon;
 
+    // Binary search for image of nearest longitude
+    function findFirstLongitudeIndex(targetLon) {
+        let low = 0, high = images.length;
+        while (low < high) {
+            let mid = (low + high) >>> 1;
+            if (images[mid].lon < targetLon) low = mid + 1;
+            else high = mid;
+        }
+        return low;
+    }
+
     // Longitude range to filter by
-    const startIndex = findFirstLongitudeIndex(images, minLon);
-    let endIndex = findFirstLongitudeIndex(images, maxLon);
+    const startIndex = findFirstLongitudeIndex(minLon);
+    let endIndex = findFirstLongitudeIndex(maxLon);
     if (endIndex < images.length) endIndex += 1;
 
     visibleImages = [];
@@ -222,7 +223,7 @@ function updateVisibleData() {
             visibleImages.push(img);
         }
     }
-    console.log(`Slice: ${endIndex - startIndex} show: ${visibleImages.length}`);
+    //console.log(`Slice: ${endIndex - startIndex} show: ${visibleImages.length}`);
 
     const latRad = view.lat * Math.PI / 180;
     const metersPerDegreeLon = 111120 * Math.cos(latRad);
@@ -234,8 +235,8 @@ function updateVisibleData() {
     let prevLat = 0, prevLon = 0, onCount = 0;
 
     visibleImages.forEach(img => {
-        img.dispLat = img.lat; // Coordinates to use for display
-        img.dispLon = img.lon;
+        let dispLat = img.lat; // Coordinates to use for display
+        let dispLon = img.lon;
 
         if (useJitter){
             if (prevLat === img.lat && prevLon === img.lon){
@@ -244,8 +245,8 @@ function updateVisibleData() {
                 onCount += 1;
                 let rad = Math.sqrt((onCount ^ 13) + 0.5);
                 let theta = 4 * rad;
-                img.dispLat += Math.cos(theta)*rad*spacing;
-                img.dispLon += Math.sin(theta)*rad*spacing*1.4;
+                dispLat += Math.cos(theta)*rad*spacing;
+                dispLon += Math.sin(theta)*rad*spacing*1.4;
             }else{
                 prevLat = img.lat;
                 prevLon = img.lon;
@@ -253,7 +254,7 @@ function updateVisibleData() {
             }
         }
         // Cache screen coordinates directly in the image object
-        const screenPos = latLon2xy(img.dispLat, img.dispLon);
+        const screenPos = latLon2xy(dispLat, dispLon);
         img.x = screenPos.x;
         img.y = screenPos.y;
     });
@@ -274,10 +275,9 @@ function updateVisibleData() {
                 const d = Math.sqrt((img.x - c.x) ** 2 + (img.y - c.y) ** 2);
                 if (d < c.radius*1.1) {
                     const w = c.count + 1;
-                    c.lat = (c.lat * c.count + img.dispLat) / w;
-                    c.lon = (c.lon * c.count + img.dispLon) / w;
-                    const nPos = latLon2xy(c.lat, c.lon);
-                    c.x = nPos.x; c.y = nPos.y;
+                    c.x = (c.x * c.count + img.x) / w;
+                    c.y = (c.y * c.count + img.y) / w;
+
                     c.count++;
                     c.radius = c.count > 3 ? baseRadius * Math.pow(c.count / 3, 1/3) : baseRadius;
                     c.hl += img.hl;
@@ -288,7 +288,7 @@ function updateVisibleData() {
         }
 
         if (!merged) {
-            clusters.push({ x: img.x, y: img.y, lat: img.lat, lon: img.lon, count: 1, hl: img.hl, radius: baseRadius });
+            clusters.push({ x: img.x, y: img.y, count: 1, hl: img.hl, radius: baseRadius });
         }
     });
 
@@ -313,12 +313,10 @@ function updateVisibleData() {
                 if (d < (cMain.radius + cLeft.radius) * 0.8) {
                     const totalCount = cMain.count + cLeft.count;
 
-                    // Weighted average for new position
-                    cMain.lat = (cMain.lat * cMain.count + cLeft.lat * cLeft.count) / totalCount;
-                    cMain.lon = (cMain.lon * cMain.count + cLeft.lon * cLeft.count) / totalCount;
+                    // Merge positions in Screen Space
+                    cMain.x = (cMain.x * cMain.count + cLeft.x * cLeft.count) / totalCount;
+                    cMain.y = (cMain.y * cMain.count + cLeft.y * cLeft.count) / totalCount;
 
-                    const nPos = latLon2xy(cMain.lat, cMain.lon);
-                    cMain.x = nPos.x; cMain.y = nPos.y;
                     cMain.count = totalCount;
 
                     cMain.hl += cLeft.hl;
@@ -372,8 +370,17 @@ function draw() {
 // --- INTERACTION HELPERS ---
 function findNearestImage(x, y, threshold) {
     if (visibleImages.length === 0) return null;
-    const mouseLon = xy2latLon(x, y).lon;
-    const startIndex = findFirstLongitudeIndex(visibleImages, mouseLon);
+
+    // binary search to find the index closest to the target X coordinate as starting point
+    let low = 0;
+    let high = visibleImages.length;
+    while (low < high) {
+        let mid = (low + high) >>> 1;
+        if (visibleImages[mid].x < x) low = mid + 1;
+        else high = mid;
+    }
+    const startIndex = low;
+
     let nearest = null, minDist = threshold;
     let indices = [startIndex - 1, startIndex];
     let done = [false, false];
