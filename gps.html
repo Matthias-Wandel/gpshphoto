@@ -136,7 +136,7 @@ function parseData(text) {
         const m = gl.match(/GPS:\s*([\d.-]+),\s*([\d.-]+)/);
         if (m) images.push({ path, dateTime: dtl, lat: parseFloat(m[1]), lon: parseFloat(m[2]), camera: cl || "Unknown",hl:0 });
     }
-    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera - b.camera || a.dateTime - b.dateTime);
+    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera > b.camera || a.dateTime > b.dateTime);
     //hilightSuspectCoordinates();
 }
 /*
@@ -258,6 +258,12 @@ function updateVisibleData() {
         img.x = screenPos.x;
         img.y = screenPos.y;
     });
+
+    if (useJitter){
+        // Longitude sorted produces x-sorted data
+        // but if we added random x-y jitter, re-sorting is needed.
+        visibleImages.sort((a, b) => a.x - b.x);
+    }
 
     clusters = [];
     const baseRadius = 3;
