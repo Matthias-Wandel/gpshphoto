@@ -28,10 +28,6 @@
     <div id="info-text"></div>
 </div>
 
-<canvas id="mapCanvas"></canvas>
-
-
-<div id="ui-overlay">...</div>
 
 <a id="map-link" target="_blank" style="
     position: absolute; top: 18px; left: 0;
@@ -179,7 +175,7 @@ function hilightSuspectCoordinates()
     }
 }
 */
-// --- DRAWING & CLUSTERING ---
+// --- COORDINATE TRANSFORMATIONS ---
 function latLon2xy(lat, lon) {
     const scale = (canvas.width / view.lonWidth);
     return { x: (lon - view.lon) * 0.7 * scale + (canvas.width / 2), y: canvas.height / 2 - (lat - view.lat) * scale };
@@ -190,18 +186,18 @@ function xy2latLon(x, y) {
     return { lon: (x - (canvas.width / 2)) / (0.7 * scale) + view.lon, lat: view.lat - (y - (canvas.height / 2)) / scale };
 }
 
-function findFirstLongitudeIndex(images, targetLon)
-{   // Does a binary search on the while image list to find a particular latitude.
+function findFirstLongitudeIndex(arr, targetLon) {
     let low = 0;
-    let high = images.length;
+    let high = arr.length;
     while (low < high) {
         let mid = (low + high) >>> 1;
-        if (images[mid].lon < targetLon) low = mid + 1;
+        if (arr[mid].lon < targetLon) low = mid + 1;
         else high = mid;
     }
     return low;
 }
 
+// --- DRAWING & CLUSTERING ---
 function updateVisibleData() {
     saveView();
     if (images.length === 0) return;
@@ -214,9 +210,9 @@ function updateVisibleData() {
     const maxLon = b2.lon;
 
     // Longitude range to filter by
-    const startIndex = findFirstLongitudeIndex(images, minLon)
-    const endIndex = findFirstLongitudeIndex(images, maxLon)
-    if (endIndex < images.len) endIndex += 1
+    const startIndex = findFirstLongitudeIndex(images, minLon);
+    let endIndex = findFirstLongitudeIndex(images, maxLon);
+    if (endIndex < images.length) endIndex += 1;
 
     visibleImages = [];
     for (let i = startIndex; i < endIndex; i++) {
@@ -235,46 +231,47 @@ function updateVisibleData() {
 
     const useJitter = pixelsPerMeter > 60;
     const spacing = 0.0000004;
-    let  prevLat = 0
-    let  prevLon = 0
-    let  onCount = 0
+    let prevLat = 0, prevLon = 0, onCount = 0;
 
     visibleImages.forEach(img => {
         img.dispLat = img.lat; // Coordinates to use for display
         img.dispLon = img.lon;
 
         if (useJitter){
-            if  (prevLat == img.lat && prevLon == img.lon){
+            if (prevLat === img.lat && prevLon === img.lon){
                 // If it coincides with other images, spread them
                 // by spiraling outwards.
-                onCount += 1
-                let rad = Math.sqrt((onCount^13)+0.5)
-                let theta = 4*rad
-                img.dispLat += Math.cos(theta)*rad*spacing
-                img.dispLon += Math.sin(theta)*rad*spacing*1.4
+                onCount += 1;
+                let rad = Math.sqrt((onCount ^ 13) + 0.5);
+                let theta = 4 * rad;
+                img.dispLat += Math.cos(theta)*rad*spacing;
+                img.dispLon += Math.sin(theta)*rad*spacing*1.4;
             }else{
-                prevLat = img.lat
-                prevLon = img.lon
-                onCount = 0
+                prevLat = img.lat;
+                prevLon = img.lon;
+                onCount = 0;
             }
         }
-    })
+        // Cache screen coordinates directly in the image object
+        const screenPos = latLon2xy(img.dispLat, img.dispLon);
+        img.x = screenPos.x;
+        img.y = screenPos.y;
+    });
 
     clusters = [];
     const baseRadius = 3;
     visibleImages.forEach(img => {
-        const pos = latLon2xy(img.dispLat, img.dispLon);
         let merged = false;
 
-        if (!useJitter){ // Only cluster if we aren't zoomed in enough to use jitter
+        if (!useJitter) { // Only cluster if we aren't zoomed in enough to use jitter
             for (let i = clusters.length - 1; i >= 0; i--) {
                 const c = clusters[i];
-                if (pos.x - c.x > 50){
+                if (img.x - c.x > 50){
                     // Clusters end up naturally longitude sorted.  Looking further left
                     // won't find a cluster to combine with
                     break;
                 }
-                const d = Math.sqrt((pos.x - c.x)**2 + (pos.y - c.y)**2);
+                const d = Math.sqrt((img.x - c.x) ** 2 + (img.y - c.y) ** 2);
                 if (d < c.radius*1.1) {
                     const w = c.count + 1;
                     c.lat = (c.lat * c.count + img.dispLat) / w;
@@ -283,15 +280,16 @@ function updateVisibleData() {
                     c.x = nPos.x; c.y = nPos.y;
                     c.count++;
                     c.radius = c.count > 3 ? baseRadius * Math.pow(c.count / 3, 1/3) : baseRadius;
-                    c.hl += img.hl
+                    c.hl += img.hl;
                     merged = true;
                     break;
                 }
             }
         }
 
-        if (!merged)
-            clusters.push({ x: pos.x, y: pos.y, lat: img.lat, lon: img.lon, count: 1, hl:img.hl, radius: baseRadius });
+        if (!merged) {
+            clusters.push({ x: img.x, y: img.y, lat: img.lat, lon: img.lon, count: 1, hl: img.hl, radius: baseRadius });
+        }
     });
 
     // If a cluster has grown large enough, it might have swallwed previous clusters to its left
@@ -320,11 +318,10 @@ function updateVisibleData() {
                     cMain.lon = (cMain.lon * cMain.count + cLeft.lon * cLeft.count) / totalCount;
 
                     const nPos = latLon2xy(cMain.lat, cMain.lon);
-                    cMain.x = nPos.x;
-                    cMain.y = nPos.y;
+                    cMain.x = nPos.x; cMain.y = nPos.y;
                     cMain.count = totalCount;
 
-                    cMain.hl += cLeft.hl
+                    cMain.hl += cLeft.hl;
 
                     // Recalculate radius based on new count
                     cMain.radius = cMain.count > 3 ? baseRadius * Math.pow(cMain.count / 3, 1/3) : baseRadius;
@@ -346,9 +343,9 @@ function draw() {
     ctx.translate(view.dragOffset.x, view.dragOffset.y);
 
     clusters.forEach(c => {
-        let alpha = 0.45;
-        if (c.count === 2) alpha = 0.63;
-        if (c.count >= 3) alpha = 0.77;
+        let alpha = 0.63;
+        if (c.count === 2) alpha = 0.72;
+        if (c.count >= 3) alpha = 0.85;
 
         ctx.globalCompositeOperation = 'lighter';
         if (c.hl)
@@ -357,20 +354,58 @@ function draw() {
             ctx.fillStyle = `rgba(30, 144, 255, ${alpha})`;
 
         ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = `rgba(255, 255, 255, 0.08)`; ctx.fill();
     });
+
 
     if (currentPreview) {
         ctx.globalCompositeOperation = 'source-over';
-        const p = latLon2xy(currentPreview.dispLat, currentPreview.dispLon);
         if (currentPreview === selectedImage) {
             ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
-            ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(currentPreview.x, currentPreview.y, 9, 0, Math.PI * 2); ctx.stroke();
         }
-        ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(p.x, p.y, 3, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(currentPreview.x, currentPreview.y, 3, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
     drawScaleBar(visibleImages.length);
+}
+
+// --- INTERACTION HELPERS ---
+function findNearestImage(x, y, threshold) {
+    if (visibleImages.length === 0) return null;
+    const mouseLon = xy2latLon(x, y).lon;
+    const startIndex = findFirstLongitudeIndex(visibleImages, mouseLon);
+    let nearest = null, minDist = threshold;
+    let indices = [startIndex - 1, startIndex];
+    let done = [false, false];
+
+    while (!done[0] || !done[1]) {
+        for (let i = 0; i < 2; i++) {
+            if (done[i]) continue;
+            const idx = indices[i];
+            if (idx < 0 || idx >= visibleImages.length) { done[i] = true; continue; }
+
+            const img = visibleImages[idx];
+            // Use cached screen coordinates
+
+            // Horizontal distance check (early exit for sorted list)
+            if (Math.abs(img.x - x) > minDist) {
+                done[i] = true;
+                continue;
+            }
+            // First check bounding box
+            if (Math.abs(img.y - y) < minDist) {
+                // Full Euclidean distance check
+                const d = Math.sqrt((img.x - x) ** 2 + (img.y - y) ** 2);
+                if (d < minDist) {
+                    minDist = d;
+                    nearest = img;
+                }
+            }
+            // Update index: i=0 moves left (-1), i=1 moves right (+1)
+            indices[i] += (i === 0 ? -1 : 1);
+        }
+    }
+    return nearest;
 }
 
 // Global to store the map button bounds and current view width
@@ -410,9 +445,9 @@ function drawScaleBar(count) {
 
     // Position the HTML anchor tag dynamically
     const mapLink = document.getElementById('map-link');
+
     if (mapLink) {
-        const btnX = x + barWidth + 20;
-        mapLink.style.left = btnX + "px";
+        mapLink.style.left = (x + barWidth + 20) + "px";
         mapLink.style.display = 'block'; // Show it once calculated
     }
 
@@ -460,27 +495,23 @@ window.addEventListener('drop', e => {
 
     // Get the dropped data (usually a URL)
     const droppedData = e.dataTransfer.getData('text/plain');
-    if (!droppedData) return;
 
     // Use a regex to find the @lat,lon,zoom or @lat,lon,widthm pattern
     // This handles both Google Maps URLs and your own format
     const match = droppedData.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
 
     if (!match) return;
-    const lat = parseFloat(match[1]);
-    const lon = parseFloat(match[2]);
+    view.lat = parseFloat(match[1]);
+    view.lon = parseFloat(match[2]);
     const widthMeters = match[3] ? parseFloat(match[3]) : 1000;
 
-    // Apply to the view
-    view.lat = lat;
-    view.lon = lon;
 
     // Convert width back to your internal lonWidth
-    const latRad = lat * Math.PI / 180;
+    const latRad = view.lat * Math.PI / 180;
     const metersPerDegreeLon = 111120 * Math.cos(latRad);
     view.lonWidth = widthMeters / (0.7 * metersPerDegreeLon);
 
-    updateVisibleData();     // Refresh the view
+    updateVisibleData();
 
 });
 
@@ -488,8 +519,7 @@ const handleStart = (x, y, isTouch) => {
     const r = uiOverlay.getBoundingClientRect();
     if (uiOverlay.style.display !== 'none' && x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return;
 
-    const t = isTouch ? 30 : 10;
-    const target = findNearestImage(x, y, t);
+    const target = findNearestImage(x, y, isTouch ? 30 : 10);
 
     if (target) {
         selectedImage = target;
@@ -552,7 +582,7 @@ canvas.addEventListener('touchmove', e => {
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const b = xy2latLon(mx, my);
         view.lonWidth = iS * (iD / d);
-        if (view.lonWidth < 0.00005) view.lonWidth = 0.00005
+        if (view.lonWidth < 0.00005) view.lonWidth = 0.00005;
         const a = xy2latLon(mx, my);
         view.lon += (b.lon - a.lon);
         view.lat += (b.lat - a.lat);
@@ -565,7 +595,7 @@ canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const b = xy2latLon(e.clientX, e.clientY);
     view.lonWidth *= (e.deltaY > 0 ? 1.1 : 0.9);
-    if (view.lonWidth < 0.00005) view.lonWidth = 0.00005
+    if (view.lonWidth < 0.00005) view.lonWidth = 0.00005;
 
 
     const a = xy2latLon(e.clientX, e.clientY);
@@ -573,80 +603,6 @@ canvas.addEventListener('wheel', e => {
     updateVisibleData();
 }, { passive: false });
 
-// Optimized to search only images currently in view
-function old_findNearestImage(x, y, threshold) {
-    let nearest = null;
-    let minDist = threshold;
-    let checked = 0
-
-    // Using visibleImages here makes mouse interactions much faster
-    visibleImages.forEach(img => {
-        const pos = latLon2xy(img.dispLat, img.dispLon);
-
-        const d = Math.sqrt((pos.x - x)**2 + (pos.y - y)**2);
-
-        if (d < minDist) {
-            minDist = d;
-            nearest = img;
-        }
-        checked += 1
-    });
-    console.log("checked",checked);
-    return nearest;
-}
-function findNearestImage(x, y, threshold)
-{
-    if (visibleImages.length === 0) return null;
-
-    const mouseLon = xy2latLon(x, y).lon;
-    const startIndex = findFirstLongitudeIndex(visibleImages, mouseLon);
-
-    let nearest = null;
-    let minDist = threshold;
-
-    // index[0] is searching left, index[1] is searching right
-    let indices = [startIndex - 1, startIndex];
-    let done = [false, false];
-
-    // Scan until both sides hit their bounds or distance limit
-    while (!done[0] || !done[1]) {
-        for (let i = 0; i < 2; i++) {
-            if (done[i]) continue;
-
-            const idx = indices[i];
-
-            // Bounds check
-            if (idx < 0 || idx >= visibleImages.length) {
-                done[i] = true;
-                continue;
-            }
-
-            const img = visibleImages[idx];
-            const pos = latLon2xy(img.dispLat, img.dispLon);
-
-            // Horizontal distance check (early exit for sorted list)
-            if (Math.abs(pos.x - x) > minDist) {
-                done[i] = true;
-                continue;
-            }
-
-            // First check bounding box
-            if (Math.abs(pos.y-y) < minDist){
-
-                // Full Euclidean distance check
-                const d = Math.sqrt((pos.x - x)**2 + (pos.y - y)**2);
-                if (d < minDist) {
-                    minDist = d;
-                    nearest = img;
-                }
-            }
-
-            // Update index: i=0 moves left (-1), i=1 moves right (+1)
-            indices[i] += (i === 0 ? -1 : 1);
-        }
-    }
-    return nearest;
-}
 
 uiOverlay.addEventListener('touchstart', e => e.stopPropagation());
 uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
@@ -667,8 +623,6 @@ canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 // Standard browser initialization
 initData();
-//function animate() { draw(); requestAnimationFrame(animate); }
-//animate();
 </script>
 </body>
 </html>
