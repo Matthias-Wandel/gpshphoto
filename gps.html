@@ -168,13 +168,13 @@ function hilightSuspectCoordinates()
         if (x >= n+3){ // Min cluster of 3
             let Tn = DaySeconds(images[n].dateTime)
             let Tx = DaySeconds(images[x-1].dateTime)
-            if (Tx-Tn > 600) // Min time elapsed of 10 minutes
+            if (Tx-Tn > 120) // Min time elapsed of 10 minutes
                 for (let y=n;y<x;y++) images[y].hl = 1 // Highlight the series
         }
         n = x; // Skip over identical group just identified
     }
-}
-*/
+}*/
+
 // --- COORDINATE TRANSFORMATIONS ---
 function latLon2xy(lat, lon) {
     const scale = (canvas.width / view.lonWidth);
@@ -186,10 +186,49 @@ function xy2latLon(x, y) {
     return { lon: (x - (canvas.width / 2)) / (0.7 * scale) + view.lon, lat: view.lat - (y - (canvas.height / 2)) / scale };
 }
 
+// for cronologically going through visbleImages using cursor keys
+const chronological = {
+    cronoIndexArray: null,
+
+    clear() {
+        this.cronoIndexArray = null;
+    },
+
+    getNavIndex(currentIndex, action) {
+        if (visibleImages.length === 0) return null;
+
+        if (!this.cronoIndexArray) {
+            this.cronoIndexArray = Array.from(visibleImages.keys());
+            this.cronoIndexArray.sort((a, b) => {
+                const dateA = visibleImages[a].dateTime;
+                const dateB = visibleImages[b].dateTime;
+                return dateA < dateB ? -1 : (dateA > dateB ? 1 : 0);
+            });
+        }
+
+        // Absolute navigation works even if currentIndex is -1
+        if (action === "first") return this.cronoIndexArray[0];
+        if (action === "last") return this.cronoIndexArray[this.cronoIndexArray.length - 1];
+
+        // Relative navigation (Arrows) requires an existing selection
+        if (currentIndex === -1) return null;
+
+        const currentPos = this.cronoIndexArray.indexOf(currentIndex);
+        if (currentPos === -1) return null;
+
+        let nextPos = currentPos + action;
+        if (nextPos < 0) nextPos = 0;
+        if (nextPos >= this.cronoIndexArray.length) nextPos = this.cronoIndexArray.length - 1;
+
+        return this.cronoIndexArray[nextPos];
+    }
+};
+
 
 // --- DRAWING & CLUSTERING ---
 function updateVisibleData() {
     saveView();
+    chronological.clear(); // Clear the chronological cache
     if (images.length === 0) return;
     const b1 = xy2latLon(-20, -20);
     const b2 = xy2latLon(canvas.width + 20, canvas.height + 20);
@@ -633,6 +672,29 @@ previewImg.ontouchend = openFullImage;
 
 window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; updateVisibleData(); });
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+
+window.addEventListener('keydown', (e) => {
+    if (visibleImages.length === 0) return;
+
+    let action = null;
+    if (e.key === "ArrowRight") action = 1;
+    else if (e.key === "ArrowLeft") action = -1;
+    else if (e.key === "Home") action = "first";
+    else if (e.key === "End") action = "last";
+
+    if (action !== null) {
+        const currentIndex = visibleImages.indexOf(selectedImage);
+
+        // getNavIndex handles the logic if currentIndex is -1 (nothing selected)
+        const nextIndex = chronological.getNavIndex(currentIndex, action);
+
+        if (nextIndex !== null && nextIndex !== currentIndex) {
+            selectedImage = visibleImages[nextIndex];
+            updateOverlay(selectedImage);
+            draw();
+        }
+    }
+});
 
 // Standard browser initialization
 initData();
