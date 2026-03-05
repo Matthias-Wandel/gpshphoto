@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>GPS Image Mapper</title>
     <script src="gpstagged.js"></script>
+    <script src="basemaps.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         canvas { display: block; cursor: default; }
@@ -116,6 +117,7 @@ function saveView() {
 
 // --- DATA LOADING ---
 function initData() {
+    baseMap.init(); // Load basemaps
     // Alert the user if gpstagged.js (containing rawImageData) is missing
     if (typeof rawImageData !== 'undefined') {
         parseData(rawImageData);
@@ -204,7 +206,7 @@ function xy2latLon(x, y) {
     };
 }
 
-// for cronologically going through visbleImages using cursor keys
+// Object for cronologically going through visbleImages using cursor keys
 const chronological = {
     cronoIndexArray: null,
 
@@ -241,6 +243,139 @@ const chronological = {
         return this.cronoIndexArray[nextPos];
     }
 };
+
+// Object for drawing selected base map images
+const baseMap = {
+    maps: [],
+
+    init() {
+        if (typeof BasemapsDir === 'undefined') return;
+
+        const lines = BasemapsDir.trim().split(/\r?\n/);
+        lines.forEach(line => {
+            console.log("basemap line:",line)
+            // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
+            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\.png)\s+(\d+)x(\d+)/);
+
+            if (!match) {
+                console.log("no good")
+
+            }else{
+                const fileName = match[1];
+                const lat = parseFloat(match[2]);
+                const lon = parseFloat(match[3]);
+                const val = parseFloat(match[4]);
+                const unit = match[5];
+                const imgW = parseInt(match[6]);
+                const imgH = parseInt(match[7]);
+
+                let latH;
+                if (unit === 'z') {
+                    // Geographic height of the image in degrees:
+                    // (180 degrees * image pixel height) / (256 * 2^zoom)
+                    latH = (180 * imgH) / (256 * Math.pow(2, val));
+                } else {
+                    // Meter-based: vertical ground distance / meters per degree
+                    latH = val / 111120;
+                }
+
+                // Geographic width in degrees (accounting for image aspect ratio)
+                const lonW = latH * (imgW / imgH) / 0.7
+
+                const entry = {
+                    fileName: fileName,
+                    fullPath: "basemaps/" + fileName,
+                    img: new Image(),
+                    lat, lon,
+                    latH,
+                    minLat: lat - (latH / 2),
+                    maxLat: lat + (latH / 2),
+                    minLon: lon - (lonW / 2),
+                    maxLon: lon + (lonW / 2)
+                };
+
+                // Set the source so the browser can load it when needed
+                entry.img.src = entry.fullPath;
+                this.maps.push(entry);
+
+                // Print the extents to the console
+                console.log(`Basemap Loaded: ${entry.fileName}`);
+                console.log(`  Dimensions: ${imgW}x${imgH}`);
+                console.log(`  Lat Extent: ${entry.minLat.toFixed(6)} to ${entry.maxLat.toFixed(6)}`);
+                console.log(`  Lon Extent: ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
+                console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
+            }
+
+        });
+    },
+
+    // Filter basemaps by what overlaps the view port.
+    getVisible() {
+        // Current view bounds
+        const b1 = xy2latLon(0, 0);
+        const b2 = xy2latLon(canvas.width, canvas.height);
+        const viewMinLat = b2.lat;
+        const viewMaxLat = b1.lat;
+        const viewMinLon = b1.lon;
+        const viewMaxLon = b2.lon;
+        const viewHeight = viewMaxLat - viewMinLat;
+
+        // 1. Filter for overlap
+        let visible = this.maps.filter(m => {
+            return !(m.minLat > viewMaxLat || m.maxLat < viewMinLat ||
+                     m.minLon > viewMaxLon || m.maxLon < viewMinLon);
+        });
+
+        // 2. Sort by latitude extent (largest to smallest)
+        visible.sort((a, b) => b.latH - a.latH);
+
+        let finalSet = [];
+        let fullCoverageFound = false;
+
+        for (let m of visible) {
+            // Rule: If an image covers less than 10% of view height, skip if we have larger ones
+            if (finalSet.length > 0 && m.latH < (viewHeight * 0.1)) continue;
+
+
+            // Rule: If this image completely covers the viewport, discard larger ones.
+            if (m.minLat <= viewMinLat && m.maxLat >= viewMaxLat &&
+                m.minLon <= viewMinLon && m.maxLon >= viewMaxLon) {
+                finalSet = [];
+            }
+            finalSet.push(m);
+
+        }
+        return finalSet
+    },
+
+    draw() {
+        const visible = this.getVisible();
+
+        if (visible.length === 0) return;
+
+        ctx.save();
+        // Dim the base map brightness (0-127 range)
+        ctx.filter = 'brightness(50%)';
+
+        visible.forEach(m => {
+            if (!m.img.complete) return;
+
+            const topLeft = latLon2xy(m.maxLat, m.minLon);
+            const bottomRight = latLon2xy(m.minLat, m.maxLon);
+
+            const w = bottomRight.x - topLeft.x;
+            const h = bottomRight.y - topLeft.y;
+
+            console.log("draw basemap ",topLeft.x, topLeft.y, w, h);
+
+            ctx.drawImage(m.img, topLeft.x, topLeft.y, w, h);
+        });
+
+        ctx.restore();
+    }
+};
+
+
 
 
 // --- DRAWING & CLUSTERING ---
@@ -398,6 +533,9 @@ function updateVisibleData() {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    baseMap.draw()
+
     ctx.save();
     ctx.translate(view.dragOffset.x, view.dragOffset.y);
 
