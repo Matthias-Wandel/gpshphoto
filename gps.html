@@ -310,7 +310,7 @@ const baseMap = {
     },
 
     // Filter basemaps by what overlaps the view port.
-    getVisible() {
+    draw() {
         // Current view bounds
         const b1 = xy2latLon(0, 0);
         const b2 = xy2latLon(canvas.width, canvas.height);
@@ -330,34 +330,27 @@ const baseMap = {
         visible.sort((a, b) => b.latH - a.latH);
 
         let finalSet = [];
-        let fullCoverageFound = false;
 
         for (let m of visible) {
-            // Rule: If an image covers less than 10% of view height, skip if we have larger ones
-            if (finalSet.length > 0 && m.latH < (viewHeight * 0.1)) continue;
+            // f an image covers less than 10% of view height, skip if we have larger ones
+            if (finalSet.length > 0 && m.latH < (viewHeight * 0.05)) continue;
 
-
-            // Rule: If this image completely covers the viewport, discard larger ones.
+            // If this image completely covers the viewport, don't draw bigger ones behind it
             if (m.minLat <= viewMinLat && m.maxLat >= viewMaxLat &&
                 m.minLon <= viewMinLon && m.maxLon >= viewMaxLon) {
-                finalSet = [];
+                finalSet = []; // Clear set to discard larger.
             }
             finalSet.push(m);
 
         }
-        return finalSet
-    },
 
-    draw() {
-        const visible = this.getVisible();
-
-        if (visible.length === 0) return;
+        if (finalSet.length === 0) return;
 
         ctx.save();
         // Dim the base map brightness (0-127 range)
         ctx.filter = 'brightness(50%)';
 
-        visible.forEach(m => {
+        finalSet.forEach(m => {
             if (!m.img.complete) return;
 
             const topLeft = latLon2xy(m.maxLat, m.minLon);
@@ -369,6 +362,9 @@ const baseMap = {
             console.log("draw basemap ",topLeft.x, topLeft.y, w, h);
 
             ctx.drawImage(m.img, topLeft.x, topLeft.y, w, h);
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(topLeft.x, topLeft.y, w, h);
         });
 
         ctx.restore();
