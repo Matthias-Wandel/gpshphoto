@@ -569,8 +569,9 @@ window.addEventListener('drop', e => {
         // View height in meters, used for google satellite view.
         view.latHeight = val / 111120;
     } else if (unit === 'z') {
-        // Logarithmic zoom level (per pixel) used for normal map view
-        view.latHeight = 180 / Math.pow(2, val);
+        // Z-scale is relative to pixels.
+        // Formula: (Total Degrees * Window Pixels) / (Base Tile Pixels * 2^Zoom)
+        view.latHeight = (180 * canvas.height) / (256 * Math.pow(2, val));
     }
     updateVisibleData();
 });
