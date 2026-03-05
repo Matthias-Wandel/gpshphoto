@@ -53,33 +53,36 @@ let clusters = [];
 let selectedImage = null;
 let currentPreview = null;
 
-// --- PERSISTENCE & URL LOGIC ---
 function getInitialView() {
-    // Get the part after the '?' (e.g., "@46.122053,-69.532545,437068m")
-    const searchString = window.location.search;
 
-    // Regex matches @lat,lon and optionally ,widthm
-    const match = searchString.match(/@([\d.-]+),([\d.-]+)(?:,(\d+)m)?/);
+    let lat = 45.624897, lon = -75.239783, latHeight = 7; // Fallback location.
+
+    const searchString = window.location.search;
+    const match = searchString.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
 
     if (match) {
-        const lat = parseFloat(match[1]);
-        const lon = parseFloat(match[2]);
-        // Default to 1000m if width is missing from the URL
-        const widthMeters = match[3] ? parseFloat(match[3]) : 1000;
+        lat = parseFloat(match[1]);
+        lon = parseFloat(match[2]);
+        const val = parseFloat(match[3]);
+        const unit = match[4];
 
-        // Convert meters back to lonWidth
-        const latRad = lat * Math.PI / 180;
-        const metersPerDegreeLon = 111120 * Math.cos(latRad);
-        const lonWidth = widthMeters / (0.7 * metersPerDegreeLon);
+        if (unit === 'z') {
+            // Google zoom 0 = 180 degrees of latitude height
+            latHeight = 180 / Math.pow(2, val);
+        } else {
+            // Unit 'm' is vertical meters. 1 degree lat is ~111,120 meters.
+            latHeight = (val || 100000) / 111120;
+        }
+    } else {
+        const saved = JSON.parse(localStorage.getItem('mapView'));
 
-        return { lat, lon, lonWidth };
+        if (saved && saved.lat) {
+            lat = saved.lat; lon = saved.lon; latHeight = saved.latHeight;
+        }
     }
-
-    // Fallback to localStorage or defaults if URL has no bookmark
-    return JSON.parse(localStorage.getItem('mapView')) || {
-        lat: 45.624897, lon: -75.239783, lonWidth: 12
-    };
+    return { lat, lon, latHeight };
 }
+
 
 let view = {
     ...getInitialView(),
@@ -88,20 +91,19 @@ let view = {
     dragOffset: { x: 0, y: 0 }
 };
 
-function saveView() {
-    // Calculate width in meters
-    const latRad = view.lat * Math.PI / 180;
-    const metersPerDegreeLon = 111120 * Math.cos(latRad);
-    const widthInMeters = Math.round(view.lonWidth * 0.7 * metersPerDegreeLon);
 
-    // Update localStorage for persistence
+function saveView() {
+    // Scale is simple: total vertical meters
+    const heightInMeters = Math.round(view.latHeight * 111120);
+
     localStorage.setItem('mapView', JSON.stringify({
         lat: view.lat,
         lon: view.lon,
-        lonWidth: view.lonWidth
+        latHeight: view.latHeight
     }));
 
-    let locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${widthInMeters}m`;
+    // Update the 'MAP' URL
+    let locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${heightInMeters}m`;
     const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname +"?"+ locValue;
     history.replaceState(null, '', newUrl);
 
@@ -177,13 +179,29 @@ function hilightSuspectCoordinates()
 
 // --- COORDINATE TRANSFORMATIONS ---
 function latLon2xy(lat, lon) {
-    const scale = (canvas.width / view.lonWidth);
-    return { x: (lon - view.lon) * 0.7 * scale + (canvas.width / 2), y: canvas.height / 2 - (lat - view.lat) * scale };
+    // scale is pixels per degree of latitude (vertical)
+    const scale = canvas.height / view.latHeight;
+    return {
+        x: canvas.width / 2 + (lon - view.lon) * 0.7 * scale,
+        y: canvas.height / 2 - (lat - view.lat) * scale
+    };
+}
+
+function latLon2xy(lat, lon) {
+    // scale is pixels per degree of latitude (vertical)
+    const scale = canvas.height / view.latHeight;
+    return {
+        x: canvas.width / 2 + (lon - view.lon) * 0.7 * scale,
+        y: canvas.height / 2 - (lat - view.lat) * scale
+    };
 }
 
 function xy2latLon(x, y) {
-    const scale = (canvas.width / view.lonWidth);
-    return { lon: (x - (canvas.width / 2)) / (0.7 * scale) + view.lon, lat: view.lat - (y - (canvas.height / 2)) / scale };
+    const scale = canvas.height / view.latHeight;
+    return {
+        lon: (x - canvas.width / 2) / (0.7 * scale) + view.lon,
+        lat: view.lat - (y - canvas.height / 2) / scale
+    };
 }
 
 // for cronologically going through visbleImages using cursor keys
@@ -265,9 +283,7 @@ function updateVisibleData() {
     //console.log(`Slice: ${endIndex - startIndex} show: ${visibleImages.length}`);
 
     const latRad = view.lat * Math.PI / 180;
-    const metersPerDegreeLon = 111120 * Math.cos(latRad);
-    const pixelsPerDegreeLon = (canvas.width / view.lonWidth) * 0.7;
-    const pixelsPerMeter = pixelsPerDegreeLon / metersPerDegreeLon;
+    const pixelsPerMeter = canvas.height / (view.latHeight * 111120);
 
     const useJitter = pixelsPerMeter > 60;
     const spacing = 0.0000004;
@@ -465,13 +481,9 @@ let mapButtonRect = { x: 0, y: 0, w: 0, h: 0 };
 let currentWidthMeters = 1000;
 
 function drawScaleBar(count) {
-    const latRad = view.lat * Math.PI / 180;
-    const metersPerDegreeLon = 111120 * Math.cos(latRad);
-    const pixelsPerDegreeLon = (canvas.width / view.lonWidth) * 0.7;
-    const metersPerPixel = metersPerDegreeLon / pixelsPerDegreeLon;
-
-    // Total width of the view in meters
-    currentWidthMeters = Math.round(canvas.width * metersPerPixel);
+    const metersPerDegreeLat = 111132;
+    // pixels per degree / meters per degree
+    const metersPerPixel = view.latHeight * metersPerDegreeLat / canvas.height;
 
     const maxBarWidth = 300;
     const maxMeters = maxBarWidth * metersPerPixel;
@@ -544,27 +556,23 @@ window.addEventListener('dragover', e => {
 
 window.addEventListener('drop', e => {
     e.preventDefault();
-
-    // Get the dropped data (usually a URL)
     const droppedData = e.dataTransfer.getData('text/plain');
-
-    // Use a regex to find the @lat,lon,zoom or @lat,lon,widthm pattern
-    // This handles both Google Maps URLs and your own format
     const match = droppedData.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
-
     if (!match) return;
+
     view.lat = parseFloat(match[1]);
     view.lon = parseFloat(match[2]);
-    const widthMeters = match[3] ? parseFloat(match[3]) : 1000;
+    const val = parseFloat(match[3]);
+    const unit = match[4];
 
-
-    // Convert width back to your internal lonWidth
-    const latRad = view.lat * Math.PI / 180;
-    const metersPerDegreeLon = 111120 * Math.cos(latRad);
-    view.lonWidth = widthMeters / (0.7 * metersPerDegreeLon);
-
+    if (unit === 'm') {
+        // View height in meters, used for google satellite view.
+        view.latHeight = val / 111120;
+    } else if (unit === 'z') {
+        // Logarithmic zoom level (per pixel) used for normal map view
+        view.latHeight = 180 / Math.pow(2, val);
+    }
     updateVisibleData();
-
 });
 
 const handleStart = (x, y, isTouch) => {
@@ -581,8 +589,9 @@ const handleStart = (x, y, isTouch) => {
         selectedImage = null;
         view.dragging = true;
         view.dragStart = { x, y };
-        if (!findNearestImage(x, y, t)) uiOverlay.style.display = 'none';
+        uiOverlay.style.display = 'none';
         draw(); // Redraw to clear the red selection circle
+
     }
 };
 const handleMove = (x, y, isTouch) => {
@@ -605,10 +614,14 @@ const handleMove = (x, y, isTouch) => {
 
 
 const handleEnd = () => {
+
     if (view.dragging) {
-        const s = (canvas.width / view.lonWidth);
-        view.lon -= (view.dragOffset.x / (0.7 * s)); view.lat += (view.dragOffset.y / s);
-        view.dragOffset = { x: 0, y: 0 }; view.dragging = false; updateVisibleData();
+        const s = (canvas.height / view.latHeight);
+        view.lon -= (view.dragOffset.x / (0.7 * s));
+        view.lat += (view.dragOffset.y / s);
+        view.dragOffset = { x: 0, y: 0 };
+        view.dragging = false;
+        updateVisibleData();
     }
 };
 
@@ -618,11 +631,12 @@ window.addEventListener('mouseup', handleEnd);
 
 let iD = 0, iS = 0;
 canvas.addEventListener('touchstart', e => {
-    if (e.touches.length === 1) handleStart(e.touches[0].clientX, e.touches[0].clientY, true);
-    else if (e.touches.length === 2) {
+    if (e.touches.length === 1){
+        handleStart(e.touches[0].clientX, e.touches[0].clientY, true);
+    }else if (e.touches.length === 2) {
         view.dragging = false;
         iD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        iS = view.lonWidth;
+        iS = view.latHeight;
     }
 }, {passive: false});
 
@@ -633,8 +647,8 @@ canvas.addEventListener('touchmove', e => {
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const b = xy2latLon(mx, my);
-        view.lonWidth = iS * (iD / d);
-        if (view.lonWidth < 0.00005) view.lonWidth = 0.00005;
+        view.latHeight = iS * (iD / d);
+        if (view.latHeight < 0.00005) view.latHeight = 0.00005;
         const a = xy2latLon(mx, my);
         view.lon += (b.lon - a.lon);
         view.lat += (b.lat - a.lat);
@@ -646,15 +660,18 @@ canvas.addEventListener('touchend', handleEnd);
 canvas.addEventListener('wheel', e => {
     e.preventDefault();
     const b = xy2latLon(e.clientX, e.clientY);
-    view.lonWidth *= (e.deltaY > 0 ? 1.1 : 0.9);
-    if (view.lonWidth < 0.00005) view.lonWidth = 0.00005;
 
+    let newHeight = view.latHeight * (e.deltaY > 0 ? 1.1 : 0.9);
+
+    // Clamp to 4 meters vertical height
+    const minHeight = 4 / 111120;
+    view.latHeight = Math.max(newHeight, minHeight);
 
     const a = xy2latLon(e.clientX, e.clientY);
-    view.lon += (b.lon - a.lon); view.lat += (b.lat - a.lat);
+    view.lon += (b.lon - a.lon);
+    view.lat += (b.lat - a.lat);
     updateVisibleData();
 }, { passive: false });
-
 
 uiOverlay.addEventListener('touchstart', e => e.stopPropagation());
 uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
