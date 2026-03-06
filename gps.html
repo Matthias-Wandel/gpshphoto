@@ -251,25 +251,26 @@ const baseMap = {
 
         const lines = BasemapsDir.trim().split(/\r?\n/);
         lines.forEach(line => {
-            console.log("basemap line:",line)
+            //console.log("basemap line:",line)
             // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
-            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\.png)\s+(\d+)x(\d+)/);
+            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+))\...g/);
 
             if (match) {
-                const fileName = match[1];
+                const fileName = line.trim()
                 const lat = parseFloat(match[2]);
                 const lon = parseFloat(match[3]);
                 const val = parseFloat(match[4]);
                 const unit = match[5];
                 const imgW = parseInt(match[6]);
                 const imgH = parseInt(match[7]);
+                const imgScale = parseInt(match[8]);
 
                 let latH;
                 if (unit === 'z') {
                     // Geographic height of the image in degrees:
                     // (180 degrees * image pixel height) / (256 * 2^zoom)
                     latH = (180 * imgH) / (256 * Math.pow(2, val));
-                    latH = latH * 0.93; // Scale fudge factor.
+                    latH = latH * 1.39/imgScale; // Scale fudge factor.
                 } else {
                     // Meter-based: vertical ground distance / meters per degree
                     latH = val / 111120;
@@ -295,11 +296,11 @@ const baseMap = {
                 this.maps.push(entry);
 
                 // Print the extents to the console
-                console.log(`Basemap Loaded: ${entry.fileName}`);
-                console.log(`  Dimensions: ${imgW}x${imgH}`);
-                console.log(`  Lat Extent: ${entry.minLat.toFixed(6)} to ${entry.maxLat.toFixed(6)}`);
-                console.log(`  Lon Extent: ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
-                console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
+                console.log(`Basemap Loaded: ${entry.fileName}  ${imgW}x${imgH}`);
+                console.log(`  Lat,Lon: ${entry.minLat.toFixed(6)} to ${entry.maxLat.toFixed(6)},  ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
+                //console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
+            }else{
+                console.log("no regex match")
             }
         });
     },
@@ -328,7 +329,7 @@ const baseMap = {
 
         for (let m of visible) {
             // f an image covers less than 10% of view height, skip if we have larger ones
-            if (finalSet.length > 0 && m.latH < (viewHeight * 0.05)) continue;
+            if (finalSet.length > 0 && m.latH < (viewHeight * 0.2)) continue;
 
             // If this image completely covers the viewport, don't draw bigger ones behind it
             if (m.minLat <= viewMinLat && m.maxLat >= viewMaxLat &&
@@ -343,11 +344,12 @@ const baseMap = {
 
         ctx.save();
 
-        // Rasie contrast and dim brightness of base map
+        // Raise contrast and dim brightness of base map
         ctx.filter = 'brightness(50%) contrast(200%)';
 
         finalSet.forEach(m => {
             if (!m.img.complete) return;
+
 
             const topLeft = latLon2xy(m.maxLat, m.minLon);
             const bottomRight = latLon2xy(m.minLat, m.maxLon);
@@ -355,7 +357,11 @@ const baseMap = {
             const w = bottomRight.x - topLeft.x;
             const h = bottomRight.y - topLeft.y;
 
-            console.log("draw basemap ",topLeft.x, topLeft.y, w, h);
+            if (m.fileName.endsWith(".png")){
+                ctx.filter = 'brightness(50%) contrast(200%)';
+            }else{
+                ctx.filter = 'none'; // Leave aerial photos alone.
+            }
 
             ctx.drawImage(m.img, topLeft.x, topLeft.y, w, h);
 
