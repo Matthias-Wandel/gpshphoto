@@ -255,7 +255,7 @@ const baseMap = {
             // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
             const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\.png)\s+(\d+)x(\d+)/);
 
-            if (!match) {
+            if (match) {
                 const fileName = match[1];
                 const lat = parseFloat(match[2]);
                 const lon = parseFloat(match[3]);
@@ -269,6 +269,7 @@ const baseMap = {
                     // Geographic height of the image in degrees:
                     // (180 degrees * image pixel height) / (256 * 2^zoom)
                     latH = (180 * imgH) / (256 * Math.pow(2, val));
+                    latH = latH * 0.93; // Scale fudge factor.
                 } else {
                     // Meter-based: vertical ground distance / meters per degree
                     latH = val / 111120;
@@ -373,6 +374,7 @@ const baseMap = {
 
 // --- DRAWING & CLUSTERING ---
 function updateVisibleData() {
+    updateLatScale(view.latHeight)
     saveView();
     chronological.clear(); // Clear the chronological cache
     if (images.length === 0) return;
