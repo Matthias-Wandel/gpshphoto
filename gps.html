@@ -253,7 +253,7 @@ const baseMap = {
         lines.forEach(line => {
             //console.log("basemap line:",line)
             // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
-            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+))\...g/);
+            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+(?:\.\d+)?))\...g/);
 
             if (match) {
                 const fileName = line.trim()
@@ -263,7 +263,7 @@ const baseMap = {
                 const unit = match[5];
                 const imgW = parseInt(match[6]);
                 const imgH = parseInt(match[7]);
-                const imgScale = parseInt(match[8]);
+                const imgScale = parseFloat(match[8]);
 
                 let latH;
                 if (unit === 'z') {
@@ -273,7 +273,7 @@ const baseMap = {
                     latH = latH * 1.39/imgScale; // Scale fudge factor.
                 } else {
                     // Meter-based: vertical ground distance / meters per degree
-                    latH = val / 111120;
+                    latH = val / 111120 * 0.75*imgScale
                 }
 
                 // Geographic width in degrees (accounting for image aspect ratio)
@@ -292,7 +292,7 @@ const baseMap = {
                 };
 
                 // Set the source so the browser can load it when needed
-                entry.img.src = entry.fullPath;
+                //entry.img.src = entry.fullPath; // don't set src so it won't load yet.
                 this.maps.push(entry);
 
                 // Print the extents to the console
@@ -300,7 +300,7 @@ const baseMap = {
                 console.log(`  Lat,Lon: ${entry.minLat.toFixed(6)} to ${entry.maxLat.toFixed(6)},  ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
                 //console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
             }else{
-                console.log("no regex match")
+                console.log("no match:" , line)
             }
         });
     },
@@ -334,7 +334,7 @@ const baseMap = {
             // If this image completely covers the viewport, don't draw bigger ones behind it
             if (m.minLat <= viewMinLat && m.maxLat >= viewMaxLat &&
                 m.minLon <= viewMinLon && m.maxLon >= viewMaxLon) {
-                finalSet = []; // Clear set to discard larger.
+                finalSet = []; // Clear set to discard larger ones behind this one.
             }
             finalSet.push(m);
 
@@ -348,8 +348,18 @@ const baseMap = {
         ctx.filter = 'brightness(50%) contrast(200%)';
 
         finalSet.forEach(m => {
-            if (!m.img.complete) return;
+            // Trigger loading image on demand
+            if (!m.srcSet) {
 
+                m.img.addEventListener('load', () => {
+                    console.log(`Finished loading: ${m.fileName}`);
+                    draw(); // Force a redraw now that the pixels are ready
+                }, { once: true }); // Use {once: true} to auto-cleanup the listener
+
+                m.img.src = m.fullPath;
+                m.srcSet = true;
+                console.log(`Lazy loading: ${m.fileName}`);
+            }
 
             const topLeft = latLon2xy(m.maxLat, m.minLon);
             const bottomRight = latLon2xy(m.minLat, m.maxLon);
