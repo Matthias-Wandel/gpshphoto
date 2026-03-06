@@ -91,6 +91,7 @@ let view = {
     dragStart: { x: 0, y: 0 },
     dragOffset: { x: 0, y: 0 }
 };
+updateLatScale(view.latHeight)
 
 
 function saveView() {
@@ -180,30 +181,27 @@ function hilightSuspectCoordinates()
 }*/
 
 // --- COORDINATE TRANSFORMATIONS ---
-function latLon2xy(lat, lon) {
-    // scale is pixels per degree of latitude (vertical)
-    const scale = canvas.height / view.latHeight;
+function latLon2xy(lat, lon)
+{
     return {
-        x: canvas.width / 2 + (lon - view.lon) * 0.7 * scale,
-        y: canvas.height / 2 - (lat - view.lat) * scale
+        x: canvas.width / 2 + (lon - view.lon) * view.lonScale,
+        y: canvas.height / 2 - (lat - view.lat) * view.latScale
     };
 }
 
-function latLon2xy(lat, lon) {
-    // scale is pixels per degree of latitude (vertical)
-    const scale = canvas.height / view.latHeight;
+function xy2latLon(x, y)
+{
     return {
-        x: canvas.width / 2 + (lon - view.lon) * 0.7 * scale,
-        y: canvas.height / 2 - (lat - view.lat) * scale
+        lon: (x - canvas.width / 2) / (view.lonScale) + view.lon,
+        lat: view.lat - (y - canvas.height / 2) / view.latScale
     };
 }
-
-function xy2latLon(x, y) {
-    const scale = canvas.height / view.latHeight;
-    return {
-        lon: (x - canvas.width / 2) / (0.7 * scale) + view.lon,
-        lat: view.lat - (y - canvas.height / 2) / scale
-    };
+function updateLatScale(latHeight)
+{
+    // scales are pixels per degree of latitude (vertical)
+    view.latHeight = latHeight
+    view.latScale = canvas.height / view.latHeight;
+    view.lonScale = view.latScale * Math.cos(view.lat/180*3.14159);
 }
 
 // Object for cronologically going through visbleImages using cursor keys
@@ -258,9 +256,6 @@ const baseMap = {
             const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\.png)\s+(\d+)x(\d+)/);
 
             if (!match) {
-                console.log("no good")
-
-            }else{
                 const fileName = match[1];
                 const lat = parseFloat(match[2]);
                 const lon = parseFloat(match[3]);
@@ -280,7 +275,7 @@ const baseMap = {
                 }
 
                 // Geographic width in degrees (accounting for image aspect ratio)
-                const lonW = latH * (imgW / imgH) / 0.7
+                const lonW = latH * (imgW / imgH) / Math.cos(lat/180*3.14159);
 
                 const entry = {
                     fileName: fileName,
@@ -305,7 +300,6 @@ const baseMap = {
                 console.log(`  Lon Extent: ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
                 console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
             }
-
         });
     },
 
@@ -347,8 +341,9 @@ const baseMap = {
         if (finalSet.length === 0) return;
 
         ctx.save();
-        // Dim the base map brightness (0-127 range)
-        ctx.filter = 'brightness(50%)';
+
+        // Rasie contrast and dim brightness of base map
+        ctx.filter = 'brightness(50%) contrast(200%)';
 
         finalSet.forEach(m => {
             if (!m.img.complete) return;
@@ -362,6 +357,8 @@ const baseMap = {
             console.log("draw basemap ",topLeft.x, topLeft.y, w, h);
 
             ctx.drawImage(m.img, topLeft.x, topLeft.y, w, h);
+
+            // Draw a rectangle around the map
             ctx.strokeStyle = 'black';
             ctx.lineWidth = 0.5;
             ctx.strokeRect(topLeft.x, topLeft.y, w, h);
@@ -530,10 +527,9 @@ function updateVisibleData() {
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    baseMap.draw()
-
     ctx.save();
     ctx.translate(view.dragOffset.x, view.dragOffset.y);
+    baseMap.draw()
 
     clusters.forEach(c => {
         let alpha = 0.63;
@@ -701,11 +697,11 @@ window.addEventListener('drop', e => {
 
     if (unit === 'm') {
         // View height in meters, used for google satellite view.
-        view.latHeight = val / 111120;
+        updateLatScale(val / 111120);
     } else if (unit === 'z') {
         // Z-scale is relative to pixels.
         // Formula: (Total Degrees * Window Pixels) / (Base Tile Pixels * 2^Zoom)
-        view.latHeight = (180 * canvas.height) / (256 * Math.pow(2, val));
+        updateLatScale( (180 * canvas.height) / (256 * Math.pow(2, val)) );
     }
     updateVisibleData();
 });
@@ -735,6 +731,7 @@ const handleMove = (x, y, isTouch) => {
         view.dragOffset.y = y - view.dragStart.y;
         draw();
     } else {
+        const wasCurrent = currentPreview;
         // Search the already-filtered visible list for hovering
         const target = findNearestImage(x, y, isTouch ? 30 : 10);
         if (target) {
@@ -743,7 +740,7 @@ const handleMove = (x, y, isTouch) => {
             // Snap back to selected image if not hovering anything else
             updateOverlay(selectedImage);
         }
-        draw()
+        if (wasCurrent != currentPreview) draw()
     }
 };
 
@@ -751,9 +748,8 @@ const handleMove = (x, y, isTouch) => {
 const handleEnd = () => {
 
     if (view.dragging) {
-        const s = (canvas.height / view.latHeight);
-        view.lon -= (view.dragOffset.x / (0.7 * s));
-        view.lat += (view.dragOffset.y / s);
+        view.lon -= (view.dragOffset.x / view.lonScale);
+        view.lat += (view.dragOffset.y / view.latScale);
         view.dragOffset = { x: 0, y: 0 };
         view.dragging = false;
         updateVisibleData();
@@ -782,8 +778,10 @@ canvas.addEventListener('touchmove', e => {
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const b = xy2latLon(mx, my);
-        view.latHeight = iS * (iD / d);
-        if (view.latHeight < 0.00005) view.latHeight = 0.00005;
+        let newlatHeight = iS * (iD / d);
+        if (newlatHeight < 0.00005) newlatHeight = 0.00005;
+        updateLatScale(newlatHeight);
+
         const a = xy2latLon(mx, my);
         view.lon += (b.lon - a.lon);
         view.lat += (b.lat - a.lat);
@@ -800,13 +798,14 @@ canvas.addEventListener('wheel', e => {
 
     // Clamp to 4 meters vertical height
     const minHeight = 4 / 111120;
-    view.latHeight = Math.max(newHeight, minHeight);
+    updateLatScale(Math.max(newHeight, minHeight));
 
     const a = xy2latLon(e.clientX, e.clientY);
     view.lon += (b.lon - a.lon);
     view.lat += (b.lat - a.lat);
     updateVisibleData();
 }, { passive: false });
+
 
 uiOverlay.addEventListener('touchstart', e => e.stopPropagation());
 uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
