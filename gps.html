@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <title>GPS Image Mapper</title>
     <script src="gpstagged.js"></script>
-    <script src="basemaps.js"></script>
+    <script src="basemaps/basemaps.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         canvas { display: block; cursor: default; }
@@ -251,9 +251,15 @@ const baseMap = {
 
         const lines = BasemapsDir.trim().split(/\r?\n/);
         lines.forEach(line => {
-            //console.log("basemap line:",line)
             // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
             const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+(?:\.\d+)?))\...g/);
+
+            let fudgeFactor = 1.0
+            const ffi = line.indexOf("ff=");
+            if (ffi > 0){
+                fudgeFactor = parseFloat(line.slice(ffi+3));
+                line = line.slice(0,ffi)
+            }
 
             if (match) {
                 const fileName = line.trim()
@@ -273,7 +279,7 @@ const baseMap = {
                     latH = latH * 1.39/imgScale; // Scale fudge factor.
                 } else {
                     // Meter-based: vertical ground distance / meters per degree
-                    latH = val / 111120 * 0.75*imgScale
+                    latH = val / 111120 * 0.72 * fudgeFactor;
                 }
 
                 // Geographic width in degrees (accounting for image aspect ratio)
@@ -344,9 +350,6 @@ const baseMap = {
 
         ctx.save();
 
-        // Raise contrast and dim brightness of base map
-        ctx.filter = 'brightness(50%) contrast(200%)';
-
         finalSet.forEach(m => {
             // Trigger loading image on demand
             if (!m.srcSet) {
@@ -366,12 +369,6 @@ const baseMap = {
 
             const w = bottomRight.x - topLeft.x;
             const h = bottomRight.y - topLeft.y;
-
-            if (m.fileName.endsWith(".png")){
-                ctx.filter = 'brightness(50%) contrast(200%)';
-            }else{
-                ctx.filter = 'none'; // Leave aerial photos alone.
-            }
 
             ctx.drawImage(m.img, topLeft.x, topLeft.y, w, h);
 

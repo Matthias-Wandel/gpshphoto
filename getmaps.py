@@ -1,7 +1,8 @@
 # Script to grab client area of google chrome on google maps.
 # Start google crome in debug mode, then navigate to maps to capture, and run this script to grab a screenshot.
 # cut off all the legend stuff, and save it with coordinates in a file.
-# Post process PNG files with "mogrify -colors 16 +dither *.png" to make them smaller.
+# Post process PNG files with "mogrify -evaluate subtract 50% *.png" to make them darker
+# and "mogrify -colors 16 +dither *.png" to make them smaller.
 
 # Must start google chrome with
 # "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\temp\chrome_debug"
