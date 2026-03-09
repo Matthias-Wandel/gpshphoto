@@ -252,7 +252,7 @@ const baseMap = {
         const lines = BasemapsDir.trim().split(/\r?\n/);
         lines.forEach(line => {
             // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
-            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+(?:\.\d+)?))\...g/);
+            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+(?:\.\d+)?))\.(?:png|jpe?g|webp)/);
 
             let fudgeFactor = 1.0
             const ffi = line.indexOf("ff=");
@@ -736,9 +736,8 @@ const handleStart = (x, y, isTouch) => {
         view.dragging = true;
         view.dragStart = { x, y };
         uiOverlay.style.display = 'none';
-        draw(); // Redraw to clear the red selection circle
-
     }
+    draw(); // Redraw to clear the red selection circle
 };
 const handleMove = (x, y, isTouch) => {
     if (view.dragging) {
@@ -768,6 +767,8 @@ const handleEnd = () => {
         view.dragOffset = { x: 0, y: 0 };
         view.dragging = false;
         updateVisibleData();
+    }else{
+        draw();
     }
 };
 
