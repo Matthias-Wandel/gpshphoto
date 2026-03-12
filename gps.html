@@ -535,7 +535,6 @@ function updateVisibleData() {
             }
         }
     }
-
     draw();
 }
 
@@ -546,18 +545,23 @@ function draw() {
     ctx.translate(view.dragOffset.x, view.dragOffset.y);
     baseMap.draw()
 
+    ctx.globalCompositeOperation = 'lighter';
     clusters.forEach(c => {
-        let alpha = 0.63;
-        if (c.count === 2) alpha = 0.72;
-        if (c.count >= 3) alpha = 0.85;
-
-        ctx.globalCompositeOperation = 'lighter';
         if (c.hl)
             ctx.fillStyle = `rgba(255, 255, 144, 1)`;
-        else
-            ctx.fillStyle = `rgba(30, 144, 255, ${alpha})`;
+        else{
+            if (c.count == 1){
+                ctx.fillStyle = `rgba(60, 140, 255, 0.6)`;
+            }else if (c.count == 2){
+                ctx.fillStyle = `rgba(60, 150, 255, 0.85)`;
+            }else{
+                ctx.fillStyle = `rgba(60, 180, 255, 1)`;
+            }
+        }
 
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+        ctx.fill();
     });
 
 
