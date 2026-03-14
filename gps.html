@@ -429,37 +429,51 @@ function updateVisibleData() {
     const pixelsPerMeter = canvas.height / (view.latHeight * 111120);
 
     const useJitter = pixelsPerMeter > 60;
-    const spacing = 0.0000004;
-    let prevLat = 0, prevLon = 0, onCount = 0;
 
-    visibleImages.forEach(img => {
-        let dispLat = img.lat; // Coordinates to use for display
-        let dispLon = img.lon;
+    for (let i = 0; i < visibleImages.length; i++) {
+        const img = visibleImages[i];
+        const screenPos = latLon2xy(img.lat, img.lon);
 
-        if (useJitter){
-            if (prevLat === img.lat && prevLon === img.lon){
-                // If it coincides with other images, spread them
-                // by spiraling outwards.
-                onCount += 1;
-                let rad = Math.sqrt((onCount ^ 13) + 0.5);
-                let theta = 4 * rad;
-                dispLat += Math.cos(theta)*rad*spacing;
-                dispLon += Math.sin(theta)*rad*spacing*1.4;
-            }else{
-                prevLat = img.lat;
-                prevLon = img.lon;
-                onCount = 0;
+        if (useJitter) {
+            // Look ahead to find how many images share this exact coordinate
+            let j = i + 1;
+            while (j < visibleImages.length &&
+                visibleImages[j].lat === img.lat && visibleImages[j].lon === img.lon) j++;
+
+            let count = j - i;
+            if (count > 1){
+                if (count > 11) { // Sprial for 11+ points
+                    let spacing = pixelsPerMeter * 0.03
+                    for (k=0; k < count; k++) {
+                        const groupImg = visibleImages[i + k];
+
+                        let rad = Math.sqrt(k + 1.5);
+                        let theta = 4 * rad;
+                        groupImg.x = screenPos.x + Math.cos(theta) * rad * spacing;
+                        groupImg.y = screenPos.y + Math.sin(theta) * rad * spacing;
+                    }
+                }else{ // Evenly space images around a for 2-10 points
+                    let radius = pixelsPerMeter * 0.1;
+                    if (count >=6) count -= 1; // Don't offset last image so it falls in circle center
+                    for (k=0; k < count; k++) {
+                        const groupImg = visibleImages[i + k];
+                        let angle = ((k+0.5) / count) * Math.PI * 2;
+                        groupImg.x = screenPos.x + Math.cos(angle) * radius;
+                        groupImg.y = screenPos.y + Math.sin(angle) * radius;
+                    }
+                }
+                i += count-1; // Skip the rest of the group in the outer loop
+                continue;
             }
         }
-        // Cache screen coordinates directly in the image object
-        const screenPos = latLon2xy(dispLat, dispLon);
+        // Single point in location, or not using jitter.
         img.x = screenPos.x;
         img.y = screenPos.y;
-    });
+    }
 
     if (useJitter){
-        // Longitude sorted produces x-sorted data
-        // but if we added random x-y jitter, re-sorting is needed.
+        // Longitude sorted source data produces x-sorted data
+        // but if we added x-y jitter, re-sorting is needed.
         visibleImages.sort((a, b) => a.x - b.x);
     }
 
@@ -496,12 +510,13 @@ function updateVisibleData() {
         }
     });
 
-    // If a cluster has grown large enough, it might have swallwed previous clusters to its left
+    // If a cluster has grown large enough, it might have swallowed previous clusters to its left
     // that were created before the cluster grew that big.  Iterate right to left
     // to see if large clusters swallow smaller older clusters to the left.
     if (!useJitter) {
         for (let i = clusters.length - 1; i >= 0; i--) {
             const cMain = clusters[i];
+            if (cMain.count <= 3) continue; // Radius doesn't increase before 3, so would not have swallowed.
 
             // Check clusters to the left of cMain
             for (let j = i - 1; j >= 0; j--) {
