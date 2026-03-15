@@ -787,7 +787,7 @@ const handleEnd = () => {
         view.dragging = false;
         updateVisibleData();
     }else{
-        draw();
+        updateVisibleData();
     }
 };
 
@@ -808,8 +808,11 @@ canvas.addEventListener('touchstart', e => {
 
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (e.touches.length === 1) handleMove(e.touches[0].clientX, e.touches[0].clientY, true);
-    else if (e.touches.length === 2) {
+    if (e.touches.length === 1){
+        // Just a lateral drag.
+        handleMove(e.touches[0].clientX, e.touches[0].clientY, true);
+    }else if (e.touches.length === 2) { 
+        // Drag and zoom via pinch in and out.
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const b = xy2latLon(mx, my);
@@ -820,7 +823,7 @@ canvas.addEventListener('touchmove', e => {
         const a = xy2latLon(mx, my);
         view.lon += (b.lon - a.lon);
         view.lat += (b.lat - a.lat);
-        updateVisibleData();
+        draw();
     }
 }, {passive: false});
 canvas.addEventListener('touchend', handleEnd);
@@ -831,8 +834,8 @@ canvas.addEventListener('wheel', e => {
 
     let newHeight = view.latHeight * (e.deltaY > 0 ? 1.1 : 0.9);
 
-    // Clamp to 4 meters vertical height
-    const minHeight = 4 / 111120;
+    // Clamp to 3 meters vertical height
+    const minHeight = 3 / 111120;
     updateLatScale(Math.max(newHeight, minHeight));
 
     const a = xy2latLon(e.clientX, e.clientY);
@@ -856,7 +859,12 @@ previewImg.onclick = openFullImage;
 previewImg.ontouchend = openFullImage;
 
 
-window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; updateVisibleData(); });
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth; 
+    canvas.height = window.innerHeight; 
+    updateVisibleData(); 
+});
+
 canvas.width = window.innerWidth; canvas.height = window.innerHeight;
 
 window.addEventListener('keydown', (e) => {
