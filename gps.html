@@ -84,13 +84,16 @@ function getInitialView() {
     return { lat, lon, latHeight };
 }
 
-
 let view = {
     ...getInitialView(),
     dragging: false,
     dragStart: { x: 0, y: 0 },
-    dragOffset: { x: 0, y: 0 }
+    dragOffset: { x: 0, y: 0 },
+    pinchScale: 1.0,
+    pinchCenter: { x: 0, y: 0 },
+    pinchStartCenter: { x: 0, y: 0 }
 };
+
 updateLatScale(view.latHeight)
 
 
@@ -557,14 +560,23 @@ function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
+    
     ctx.translate(view.dragOffset.x, view.dragOffset.y);
+
+    if (view.pinchScale !== 1.0) { // Scaling relative to the original pinch center
+        ctx.translate(view.pinchStartCenter.x, view.pinchStartCenter.y);
+        ctx.scale(view.pinchScale, view.pinchScale);
+        ctx.translate(-view.pinchStartCenter.x, -view.pinchStartCenter.y);
+    }
+    
     baseMap.draw()
 
+    // Draw image points & clusters
     ctx.globalCompositeOperation = 'lighter';
     clusters.forEach(c => {
         if (c.hl)
             ctx.fillStyle = `rgba(255, 255, 144, 1)`;
-        else{
+        else {
             if (c.count == 1){
                 ctx.fillStyle = `rgba(60, 140, 255, 0.6)`;
             }else if (c.count == 2){
@@ -573,12 +585,10 @@ function draw() {
                 ctx.fillStyle = `rgba(60, 180, 255, 1)`;
             }
         }
-
         ctx.beginPath();
         ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
         ctx.fill();
     });
-
 
     if (currentPreview) {
         ctx.globalCompositeOperation = 'source-over';
@@ -588,11 +598,12 @@ function draw() {
         }
         ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(currentPreview.x, currentPreview.y, 3, 0, Math.PI * 2); ctx.fill();
     }
+    
     ctx.restore();
     drawScaleBar(visibleImages.length);
 }
 
-// --- INTERACTION HELPERS ---
+
 function findNearestImage(x, y, threshold) {
     if (visibleImages.length === 0) return null;
 
@@ -779,14 +790,31 @@ const handleMove = (x, y, isTouch) => {
 
 
 const handleEnd = () => {
+    if (view.pinchScale !== 1.0 || (view.dragOffset.x !== 0 || view.dragOffset.y !== 0)) {
+        // Find geographic coordinate at the pinch START center 
+        // effectively checking what WAS under our original pivot point.
+        const b = xy2latLon(view.pinchStartCenter.x, view.pinchStartCenter.y);
+        
+        // Update scale
+        let newlatHeight = view.latHeight / view.pinchScale;
+        if (newlatHeight < 0.00005) newlatHeight = 0.00005;
+        updateLatScale(newlatHeight);
 
-    if (view.dragging) {
-        view.lon -= (view.dragOffset.x / view.lonScale);
-        view.lat += (view.dragOffset.y / view.latScale);
+        // Update center coordinates accounting for both zoom pivot and lateral drag
+        // We look at the final position of our pivot point on the screen
+        const finalScreenX = view.pinchStartCenter.x + view.dragOffset.x;
+        const finalScreenY = view.pinchStartCenter.y + view.dragOffset.y;
+        
+        const a = xy2latLon(finalScreenX, finalScreenY);
+        view.lon += (b.lon - a.lon);
+        view.lat += (b.lat - a.lat);
+        
+        // Reset interaction states
+        view.pinchScale = 1.0;
         view.dragOffset = { x: 0, y: 0 };
         view.dragging = false;
-        updateVisibleData();
-    }else{
+        iD = 0; 
+        
         updateVisibleData();
     }
 };
@@ -799,33 +827,47 @@ let iD = 0, iS = 0;
 canvas.addEventListener('touchstart', e => {
     if (e.touches.length === 1){
         handleStart(e.touches[0].clientX, e.touches[0].clientY, true);
-    }else if (e.touches.length === 2) {
-        view.dragging = false;
-        iD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        iS = view.latHeight;
-    }
-}, {passive: false});
+} else if (e.touches.length === 2) {
+    view.dragging = false;
+    iD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+    iS = view.latHeight;
+    // Capture the initial center of the pinch
+    view.pinchStartCenter = {
+        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+    };
+    view.pinchCenter = { ...view.pinchStartCenter };
+}}, {passive: false});
 
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
-    if (e.touches.length === 1){
+    if (e.touches.length === 1) {
         // Just a lateral drag.
         handleMove(e.touches[0].clientX, e.touches[0].clientY, true);
-    }else if (e.touches.length === 2) { 
+
+    } else if (e.touches.length === 2) { 
         // Drag and zoom via pinch in and out.
         const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-        const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2, my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-        const b = xy2latLon(mx, my);
-        let newlatHeight = iS * (iD / d);
-        if (newlatHeight < 0.00005) newlatHeight = 0.00005;
-        updateLatScale(newlatHeight);
-
-        const a = xy2latLon(mx, my);
-        view.lon += (b.lon - a.lon);
-        view.lat += (b.lat - a.lat);
+        
+        // Update live scale
+        view.pinchScale = d / iD;
+        
+        // Update the current midpoint
+        view.pinchCenter = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
+    
+        // Calculate the movement of the fingers' midpoint
+        // This allows zoom and pan simultaneously
+        view.dragOffset.x = view.pinchCenter.x - view.pinchStartCenter.x;
+        view.dragOffset.y = view.pinchCenter.y - view.pinchStartCenter.y;
+    
         draw();
     }
 }, {passive: false});
+
+
 canvas.addEventListener('touchend', handleEnd);
 
 canvas.addEventListener('wheel', e => {
