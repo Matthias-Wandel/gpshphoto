@@ -789,10 +789,9 @@ const handleMove = (x, y, isTouch) => {
 };
 
 
-const handleEnd = () => {
-    if (view.pinchScale !== 1.0 || (view.dragOffset.x !== 0 || view.dragOffset.y !== 0)) {
-        // Find geographic coordinate at the pinch START center 
-        // effectively checking what WAS under our original pivot point.
+const finalizeInteraction = () => {
+    if (view.pinchScale !== 1.0) {
+        // Commit Pinch/Pan combination
         const b = xy2latLon(view.pinchStartCenter.x, view.pinchStartCenter.y);
         
         // Update scale
@@ -808,36 +807,42 @@ const handleEnd = () => {
         const a = xy2latLon(finalScreenX, finalScreenY);
         view.lon += (b.lon - a.lon);
         view.lat += (b.lat - a.lat);
-        
-        // Reset interaction states
-        view.pinchScale = 1.0;
-        view.dragOffset = { x: 0, y: 0 };
-        view.dragging = false;
-        iD = 0; 
-        
-        updateVisibleData();
+    }else if (view.dragOffset.x !== 0 || view.dragOffset.y !== 0) {
+        // Commit standard single-finger Drag
+        view.lon -= (view.dragOffset.x / view.lonScale);
+        view.lat += (view.dragOffset.y / view.latScale);
     }
+
+    // Reset interaction states
+    view.pinchScale = 1.0;
+    view.dragOffset = { x: 0, y: 0 };
+    view.dragging = false;
+    iD = 0; 
+
+    updateVisibleData();
+    saveView(); // Save the new committed state to URL/LocalStorage
 };
 
-canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY, false));
-window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY, false));
-window.addEventListener('mouseup', handleEnd);
 
 let iD = 0, iS = 0;
+
 canvas.addEventListener('touchstart', e => {
-    if (e.touches.length === 1){
+    // Finish any existing motion before starting a new one
+    if (view.dragging || view.pinchScale !== 1.0) finalizeInteraction();
+
+    if (e.touches.length === 1) {
         handleStart(e.touches[0].clientX, e.touches[0].clientY, true);
-} else if (e.touches.length === 2) {
-    view.dragging = false;
-    iD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
-    iS = view.latHeight;
-    // Capture the initial center of the pinch
-    view.pinchStartCenter = {
-        x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
-        y: (e.touches[0].clientY + e.touches[1].clientY) / 2
-    };
-    view.pinchCenter = { ...view.pinchStartCenter };
-}}, {passive: false});
+    } else if (e.touches.length === 2) {
+        // Switch to pinch mode
+        iD = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        view.pinchStartCenter = {
+            x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            y: (e.touches[0].clientY + e.touches[1].clientY) / 2
+        };
+        view.pinchCenter = { ...view.pinchStartCenter };
+    }
+}, { passive: false });
+
 
 canvas.addEventListener('touchmove', e => {
     e.preventDefault();
@@ -867,8 +872,25 @@ canvas.addEventListener('touchmove', e => {
     }
 }, {passive: false});
 
+canvas.addEventListener('touchend', e => {
+    finalizeInteraction();
+    if (e.touches.length === 1) {
+        // If one finger is still down, immediately start a new pan context
+        // so the remaining finger can continue moving the map.
+        handleStart(e.touches[0].clientX, e.touches[0].clientY, true);
+    }
+}, { passive: false });
 
-canvas.addEventListener('touchend', handleEnd);
+
+canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY, false));
+uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
+
+window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY, false));
+
+window.addEventListener('mouseup', () => {
+    if (view.dragging) finalizeInteraction();
+});
+
 
 canvas.addEventListener('wheel', e => {
     e.preventDefault();
@@ -886,9 +908,6 @@ canvas.addEventListener('wheel', e => {
     updateVisibleData();
 }, { passive: false });
 
-
-uiOverlay.addEventListener('touchstart', e => e.stopPropagation());
-uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
 
 // Function to handle opening the full-resolution image
 const openFullImage = (e) => {
