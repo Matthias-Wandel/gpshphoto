@@ -702,12 +702,28 @@ function getThumbPath(fullPath) {
 
 function updateOverlay(img) {
     if (!img) return;
+    // If already showing this, do nothing (prevents blinking if image doesn't exist)
+    if (currentPreview === img) return;
+
     currentPreview = img;
+
+    // Ensure the overlay is visible immediately
     uiOverlay.style.display = 'block';
+
+    // If image fails to load, replace it with a blank image, so browser doesn't make the space dissapear.
+    previewImg.onerror = () => {
+        // Replace broken src with a transparent 1x1 pixel.
+        // This keeps the 320x240 box filled with the #111 background color.
+        previewImg.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+        previewImg.onerror = null;
+    };
+
     previewImg.src = getThumbPath(img.path);
     infoText.innerHTML = '';
     const addLink = (txt, action) => {
-        const s = document.createElement('div'); s.className = 'link-text'; s.textContent = txt;
+        const s = document.createElement('div');
+        s.className = 'link-text';
+        s.textContent = txt;
         s.onclick = e => { e.stopPropagation(); action(); };
         s.ontouchend = e => { e.stopPropagation(); e.preventDefault(); action(); };
         infoText.appendChild(s);
