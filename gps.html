@@ -910,20 +910,26 @@ window.addEventListener('mouseup', () => {
 });
 
 
-canvas.addEventListener('wheel', e => {
-    e.preventDefault();
-    const b = xy2latLon(e.clientX, e.clientY);
+function AdjustZoom(zoomratio, cX, cY)
+{
+    const b = xy2latLon(cX, cY);
 
-    let newHeight = view.latHeight * (e.deltaY > 0 ? 1.1 : 0.9);
+    let newHeight = view.latHeight * zoomratio;
 
     // Clamp to 3 meters vertical height
     const minHeight = 3 / 111120;
     updateLatScale(Math.max(newHeight, minHeight));
 
-    const a = xy2latLon(e.clientX, e.clientY);
+    const a = xy2latLon(cX, cY);
     view.lon += (b.lon - a.lon);
     view.lat += (b.lat - a.lat);
     updateVisibleData();
+}
+
+
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    AdjustZoom(e.deltaY > 0 ? 1.1 : 0.9, e.clientX, e.clientY);
 }, { passive: false });
 
 
@@ -945,6 +951,11 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === "ArrowLeft") action = -1;
     else if (e.key === "Home") action = "first";
     else if (e.key === "End") action = "last";
+    else if (e.key === "-" || e.key === "="){
+		AdjustZoom(e.key === "-" ? 1.1 : 0.9, canvas.width / 2,canvas.height / 2);
+	}
+
+    else if (e.key === "=") AdjustZoom(0.9, 100,100);
 
     if (action !== null) {
         const currentIndex = visibleImages.indexOf(selectedImage);
