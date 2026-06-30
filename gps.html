@@ -531,6 +531,15 @@ function updateVisibleData() {
             }
         }
     }
+
+    if (currentPreview && !visibleImages.includes(currentPreview)) {
+        // if currentPreviw got pushed off screen, also recalculat its X and Y so it gets pushed
+        // off the visible rectangle.
+        const pt = latLon2xy(currentPreview.lat, currentPreview.lon);
+        currentPreview.x = pt.x;
+        currentPreview.y = pt.y;
+    }
+
     draw();
 }
 
