@@ -185,27 +185,63 @@ function hilightSuspectCoordinates()
 }*/
 
 // --- COORDINATE TRANSFORMATIONS ---
+// Converts a geographic Latitude into a normalized Mercator Y value (0.0 to 1.0)
+function lat2mercatorY(lat) {
+    const rad = lat * Math.PI / 180;
+    return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2;
+}
+
+// Converts a normalized Mercator Y value back into a geographic Latitude
+function mercatorY2lat(y)
+{
+    const n = Math.PI - 2 * Math.PI * y;
+    return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
 function latLon2xy(lat, lon)
 {
-    return {
-        x: canvas.width / 2 + (lon - view.lon) * view.lonScale,
-        y: canvas.height / 2 - (lat - view.lat) * view.latScale
-    };
+    const centerMercatorY = lat2mercatorY(view.lat);
+
+    // Scale horizontal longitude linearly
+    const x = canvas.width / 2 + (lon - view.lon) * view.lonScale;
+
+    // Position vertical pixels using the Mercator logarithmic curve
+    const targetMercatorY = lat2mercatorY(lat);
+    const mercatorDeltaY = targetMercatorY - centerMercatorY;
+    const pixelScaleY = canvas.height / view.yHeight;
+    const y = canvas.height / 2 + (mercatorDeltaY * pixelScaleY);
+
+    return { x, y };
 }
 
 function xy2latLon(x, y)
 {
-    return {
-        lon: (x - canvas.width / 2) / (view.lonScale) + view.lon,
-        lat: view.lat - (y - canvas.height / 2) / view.latScale
-    };
+    // Reverse longitude mapping
+    const lon = view.lon + (x - canvas.width / 2) / view.lonScale;
+
+    // Reverse Mercator Y curve back to actual latitude degrees
+    const centerMercatorY = lat2mercatorY(view.lat);
+    const pixelScaleY = canvas.height / view.yHeight;
+    const targetMercatorY = centerMercatorY + (y - canvas.height / 2) / pixelScaleY;
+    const lat = mercatorY2lat(targetMercatorY);
+
+    return { lat, lon };
 }
-function updateLatScale(latHeight)
+
+function updateLatScale(newLatHeight)
 {
-    // scales are pixels per degree of latitude (vertical)
-    view.latHeight = latHeight
-    view.latScale = canvas.height / view.latHeight;
-    view.lonScale = view.latScale * Math.cos(view.lat/180*3.14159);
+    // 1. Establish the current Mercator height footprint
+    view.latHeight = newLatHeight;
+    const topLat = view.lat + (newLatHeight / 2);
+    const bottomLat = view.lat - (newLatHeight / 2);
+
+
+    view.yHeight = lat2mercatorY(bottomLat) - lat2mercatorY(topLat);
+
+    // 2. Synchronize the horizontal pixels-per-degree multiplier
+    // At Web Mercator scale, the full world width matches the full world height
+    const totalWorldPixelHeight = canvas.height / view.yHeight;
+    view.lonScale = totalWorldPixelHeight / 360;
 }
 
 // Object for cronologically going through visbleImages using cursor keys
@@ -246,146 +282,87 @@ const chronological = {
     }
 };
 
-// Object for drawing selected base map images
+// Object for drawing OpenStreetMap tiles dynamically on the background
 const baseMap = {
-    maps: [],
+    tileCache: new Map(),
 
     init() {
-        if (typeof BasemapsDir === 'undefined') return;
-
-        const lines = BasemapsDir.trim().split(/\r?\n/);
-        lines.forEach(line => {
-            // Regex captures: 1:fileName, 2:lat, 3:lon, 4:zoomVal, 5:unit(z/m), 6:width, 7:height
-            const match = line.match(/(basemap@([\d.-]+),([\d.-]+),([\d.]+)([mz])\s+(\d+)x(\d+)x(\d+(?:\.\d+)?))\.(?:png|jpe?g|webp)/);
-
-            let fudgeFactor = 1.0
-            const ffi = line.indexOf("ff=");
-            if (ffi > 0){
-                fudgeFactor = parseFloat(line.slice(ffi+3));
-                line = line.slice(0,ffi)
-            }
-
-            if (match) {
-                const fileName = line.trim()
-                const lat = parseFloat(match[2]);
-                const lon = parseFloat(match[3]);
-                const val = parseFloat(match[4]);
-                const unit = match[5];
-                const imgW = parseInt(match[6]);
-                const imgH = parseInt(match[7]);
-                const imgScale = parseFloat(match[8]);
-
-                let latH;
-                if (unit === 'z') {
-                    // Geographic height of the image in degrees:
-                    // (180 degrees * image pixel height) / (256 * 2^zoom)
-                    latH = (180 * imgH) / (256 * Math.pow(2, val));
-                    latH = latH * 1.39/imgScale; // Scale fudge factor.
-                } else {
-                    // Meter-based: vertical ground distance / meters per degree
-                    latH = val / 111120 * 0.72 * fudgeFactor;
-                }
-
-                // Geographic width in degrees (accounting for image aspect ratio)
-                const lonW = latH * (imgW / imgH) / Math.cos(lat/180*3.14159);
-
-                const entry = {
-                    fileName: fileName,
-                    fullPath: "basemaps/" + fileName,
-                    img: new Image(),
-                    lat, lon,
-                    latH,
-                    minLat: lat - (latH / 2),
-                    maxLat: lat + (latH / 2),
-                    minLon: lon - (lonW / 2),
-                    maxLon: lon + (lonW / 2)
-                };
-
-                // Set the source so the browser can load it when needed
-                //entry.img.src = entry.fullPath; // don't set src so it won't load yet.
-                this.maps.push(entry);
-
-                // Print the extents to the console
-                console.log(`Basemap Loaded: ${entry.fileName}  ${imgW}x${imgH}`);
-                console.log(`  Lat,Lon: ${entry.minLat.toFixed(6)} to ${entry.maxLat.toFixed(6)},  ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
-                //console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
-            }else{
-                console.log("no match:" , line)
-            }
-        });
+        console.log("OpenStreetMap provider initialized.");
     },
 
-    // Filter basemaps by what overlaps the view port.
-    draw() {
-        // Current view bounds
-        const b1 = xy2latLon(0, 0);
-        const b2 = xy2latLon(canvas.width, canvas.height);
-        const viewMinLat = b2.lat;
-        const viewMaxLat = b1.lat;
-        const viewMinLon = b1.lon;
-        const viewMaxLon = b2.lon;
-        const viewHeight = viewMaxLat - viewMinLat;
+    // Standard cryptographic/mathematical hash helper to map Lat/Lon to OSM tile grids
+    lon2tile(lon, zoom) {
+        return Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
+    },
 
-        // 1. Filter for overlap
-        let visible = this.maps.filter(m => {
-            return !(m.minLat > viewMaxLat || m.maxLat < viewMinLat ||
-                     m.minLon > viewMaxLon || m.maxLon < viewMinLon);
-        });
+    lat2tile(lat, zoom) {
+        return Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * Math.pow(2, zoom));
+    },
 
-        // 2. Sort by latitude extent (largest to smallest)
-        visible.sort((a, b) => b.latH - a.latH);
+    // Reverse calculation to position tiles correctly on screen relative to your linear map grid
+    tile2lon(x, z) {
+        return x / Math.pow(2, z) * 360 - 180;
+    },
 
-        let finalSet = [];
+    tile2lat(y, z) {
+        const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+        return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    },
 
-        for (let m of visible) {
-            // f an image covers less than 10% of view height, skip if we have larger ones
-            if (finalSet.length > 0 && m.latH < (viewHeight * 0.2)) continue;
+draw() {
+        let zoom = Math.round(Math.log2(180 / view.latHeight));
+        if (zoom < 0) zoom = 0;
+        if (zoom > 19) zoom = 19;
 
-            // If this image completely covers the viewport, don't draw bigger ones behind it
-            if (m.minLat <= viewMinLat && m.maxLat >= viewMaxLat &&
-                m.minLon <= viewMinLon && m.maxLon >= viewMaxLon) {
-                finalSet = []; // Clear set to discard larger ones behind this one.
-            }
-            finalSet.push(m);
+        const topLeftGeo = xy2latLon(0, 0);
+        const bottomRightGeo = xy2latLon(canvas.width, canvas.height);
 
-        }
-
-        if (finalSet.length === 0) return;
+        const minTileX = this.lon2tile(topLeftGeo.lon, zoom);
+        const maxTileX = this.lon2tile(bottomRightGeo.lon, zoom);
+        const minTileY = this.lat2tile(topLeftGeo.lat, zoom);
+        const maxTileY = this.lat2tile(bottomRightGeo.lat, zoom);
 
         ctx.save();
 
-        finalSet.forEach(m => {
-            // Trigger loading image on demand
-            if (!m.srcSet) {
+        // Maps input range 179-255 onto output range 0-142
+        // Dim the bright values into a low range first, then expand the contrast pivot point
+        ctx.filter = 'brightness(40%) contrast(250%) brightness(180%)';
 
-                m.img.addEventListener('load', () => {
-                    console.log(`Finished loading: ${m.fileName}`);
-                    draw(); // Force a redraw now that the pixels are ready
-                }, { once: true }); // Use {once: true} to auto-cleanup the listener
+        for (let x = minTileX; x <= maxTileX; x++) {
+            for (let y = minTileY; y <= maxTileY; y++) {
+                const tileKey = `${zoom},${x},${y}`;
+                let img = this.tileCache.get(tileKey);
 
-                m.img.src = m.fullPath;
-                m.srcSet = true;
-                console.log(`Lazy loading: ${m.fileName}`);
+                if (!img) {
+                    img = new Image();
+                    img.crossOrigin = "Anonymous";
+                    // Using the light map as the foundation
+                    // Replace the old osm tile source line with this one:
+                    img.src = `https://basemaps.cartocdn.com/rastertiles/voyager/${zoom}/${x}/${y}.png`;
+
+                    img.addEventListener('load', () => { draw(); }, { once: true });
+                    this.tileCache.set(tileKey, img);
+                }
+
+                if (img.complete && img.naturalWidth !== 0) {
+                    const tileMaxLat = this.tile2lat(y, zoom);
+                    const tileMinLat = this.tile2lat(y + 1, zoom);
+                    const tileMinLon = this.tile2lon(x, zoom);
+                    const tileMaxLon = this.tile2lon(x + 1, zoom);
+
+                    const screenTopLeft = latLon2xy(tileMaxLat, tileMinLon);
+                    const screenBottomRight = latLon2xy(tileMinLat, tileMaxLon);
+
+                    const tileW = screenBottomRight.x - screenTopLeft.x;
+                    const tileH = screenBottomRight.y - screenTopLeft.y;
+
+                    ctx.drawImage(img, screenTopLeft.x, screenTopLeft.y, tileW, tileH);
+                }
             }
+        }
 
-            const topLeft = latLon2xy(m.maxLat, m.minLon);
-            const bottomRight = latLon2xy(m.minLat, m.maxLon);
-
-            const w = bottomRight.x - topLeft.x;
-            const h = bottomRight.y - topLeft.y;
-
-            ctx.drawImage(m.img, topLeft.x, topLeft.y, w, h);
-
-            // Draw a rectangle around the map
-            ctx.strokeStyle = 'black';
-            ctx.lineWidth = 0.5;
-            ctx.strokeRect(topLeft.x, topLeft.y, w, h);
-        });
-
-        ctx.restore();
-    }
-};
-
+        ctx.restore(); // Restores context to full fidelity for UI overlays and data dots
+    }};
 
 
 
@@ -826,8 +803,9 @@ const finalizeInteraction = () => {
         view.lat += (b.lat - a.lat);
     }else if (view.dragOffset.x !== 0 || view.dragOffset.y !== 0) {
         // Commit standard single-finger Drag
+        const tempViewLatScale = view.lonScale * 2 * Math.cos(view.lat * Math.PI / 180);
         view.lon -= (view.dragOffset.x / view.lonScale);
-        view.lat += (view.dragOffset.y / view.latScale);
+        view.lat += (view.dragOffset.y / tempViewLatScale);
     }
 
     // Reset interaction states
@@ -910,26 +888,20 @@ window.addEventListener('mouseup', () => {
 });
 
 
-function AdjustZoom(zoomratio, cX, cY)
-{
-    const b = xy2latLon(cX, cY);
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const b = xy2latLon(e.clientX, e.clientY);
 
-    let newHeight = view.latHeight * zoomratio;
+    let newHeight = view.latHeight * (e.deltaY > 0 ? 1.1 : 0.9);
 
     // Clamp to 3 meters vertical height
     const minHeight = 3 / 111120;
     updateLatScale(Math.max(newHeight, minHeight));
 
-    const a = xy2latLon(cX, cY);
+    const a = xy2latLon(e.clientX, e.clientY);
     view.lon += (b.lon - a.lon);
     view.lat += (b.lat - a.lat);
     updateVisibleData();
-}
-
-
-canvas.addEventListener('wheel', e => {
-    e.preventDefault();
-    AdjustZoom(e.deltaY > 0 ? 1.1 : 0.9, e.clientX, e.clientY);
 }, { passive: false });
 
 
@@ -951,11 +923,6 @@ window.addEventListener('keydown', (e) => {
     else if (e.key === "ArrowLeft") action = -1;
     else if (e.key === "Home") action = "first";
     else if (e.key === "End") action = "last";
-    else if (e.key === "-" || e.key === "="){
-		AdjustZoom(e.key === "-" ? 1.1 : 0.9, canvas.width / 2,canvas.height / 2);
-	}
-
-    else if (e.key === "=") AdjustZoom(0.9, 100,100);
 
     if (action !== null) {
         const currentIndex = visibleImages.indexOf(selectedImage);
