@@ -49,10 +49,10 @@
             margin-top: 15px;
         }
         .btn:hover { background-color: #2980b9; }
-        .btn-success { 
-            background-color: #2ecc71; 
-            font-size: 18px; 
-            padding: 15px 30px; 
+        .btn-success {
+            background-color: #2ecc71;
+            font-size: 18px;
+            padding: 15px 30px;
             box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3);
         }
         .btn-success:hover { background-color: #27ae60; }
@@ -116,7 +116,7 @@
         <div id="chrome-notice" class="instructions hidden" style="background-color: #d4edda; border-left-color: #28a745; color: #155724;">
             <strong>✅ Success:</strong> Synchronization complete! The database modifications have been safely compiled and saved directly into <code>gpstagged.js</code> at the root of your selected directory.
         </div>
-        
+
         <p style="margin-top: 25px; margin-bottom: 25px; color: #7f8c8d;">The synchronization engine has concluded successfully. You can now load your navigation map.</p>
         <a href="gps.html" class="btn btn-success">Browse Images on Map</a>
     </div>
@@ -163,9 +163,9 @@
     dropZone.addEventListener('drop', async (e) => {
         const items = e.dataTransfer.items;
         if (!items || items.length === 0) return;
-        
+
         switchToProcessing();
-        
+
         // Attempt to intercept direct Directory Handles if run on Chromium
         if (isChromium && typeof items[0].getAsFileSystemHandle === 'function') {
             try {
@@ -180,7 +180,7 @@
                 console.warn("Modern folder drop capture bypassed, pivoting to legacy engine", err);
             }
         }
-        
+
         // Native Firefox and standard fallback Engine
         const entry = items[0].webkitGetAsEntry();
         if (entry && entry.isDirectory) {
@@ -204,7 +204,7 @@
                 resetUI();
             }
         });
-        
+
         dropZone.addEventListener('click', (e) => {
             if (e.target !== pickerBtn) pickerBtn.click();
         });
@@ -243,27 +243,24 @@
     // Firefox Legacy Batch Engine Loop (Capped asynchronous processing chunks)
     function scanLegacyDirectory(directoryEntry, currentPath = null) {
         return new Promise((resolve) => {
-            // If currentPath is null, we are at the top-level dropped folder. 
-            // We bypass its name so paths save relative to its contents.
+            // Skips root folder name to start relative tracking at content origin
             const relativePath = currentPath === null ? "" : (currentPath === "" ? directoryEntry.name : `${currentPath}/${directoryEntry.name}`);
-            
+
             statusText.innerText = `Traversing directory branch: ${relativePath || "Root Content"}`;
-            
+
             const dirReader = directoryEntry.createReader();
             const bufferedEntries = [];
-    
+
             const readBatch = () => {
                 dirReader.readEntries(async (entries) => {
                     if (entries.length === 0) {
                         for (const entry of bufferedEntries) {
                             if (entry.isDirectory) {
-                                // Pass down the relative path string to children
                                 await scanLegacyDirectory(entry, relativePath);
                             } else if (entry.isFile) {
                                 processedFiles++;
                                 if (isImageFile(entry.name)) {
                                     const file = await getFileFromEntry(entry);
-                                    // Combine cleanly without trailing or leading slashes
                                     const filePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
                                     await processImageFile(file, filePath);
                                 }
@@ -289,101 +286,187 @@
 
     function isImageFile(filename) {
         const ext = filename.split('.').pop().toLowerCase();
-        return ['jpg', 'jpeg'].includes(ext); // Extensible layout area for future image formats
+        return ['jpg', 'jpeg', 'webp'].includes(ext);
     }
 
     async function processImageFile(file, path) {
         try {
-            // Read target header payload block to verify EXIF allocations
-            const buffer = await file.slice(0, 32768).arrayBuffer();
-            const dataView = new DataView(buffer);
-            
-            if (dataView.getUint16(0) !== 0xFFD8) return; // Discard invalid streams
-            
-            let offset = 2;
-            let exifData = null;
-            
-            while (offset < dataView.byteLength - 2) {
-                const marker = dataView.getUint16(offset);
-                const length = dataView.getUint16(offset + 2);
-                
-                if (marker === 0xFFE1) { // Process App1 Allocation Target
-                    exifData = parseExif(dataView, offset + 4, length - 2);
-                    break;
-                }
-                offset += 2 + length;
-            }
-
-            if (exifData && exifData.lat && exifData.lon) {
-                let block = `${path}\n`;
-                block += `Date/Time: ${exifData.dateTime || '2000:01:01 00:00:00'}\n`;
-                block += `GPS: ${exifData.lat.toFixed(7)},${exifData.lon.toFixed(7)}\n`;
-                block += `Camera: ${exifData.camera || 'Standard Camera'}\n`;
-                outputLines.push(block);
+            const ext = file.name.split('.').pop().toLowerCase();
+            if (ext === 'webp') {
+                await processWebpFile(file, path);
+            } else {
+                await processJpegFile(file, path);
             }
         } catch (e) {
             console.error(`Parser evaluation collision on: ${path}`, e);
         }
     }
 
+    // JPEG Binary Header Parser
+    async function processJpegFile(file, path) {
+        const buffer = await file.slice(0, 32768).arrayBuffer();
+        const dataView = new DataView(buffer);
+
+        if (dataView.byteLength < 4) return;
+        if (dataView.getUint16(0) !== 0xFFD8) return; // Discard invalid JPEG files
+
+        let offset = 2;
+        let exifData = null;
+
+        while (offset < dataView.byteLength - 2) {
+            const marker = dataView.getUint16(offset);
+            const length = dataView.getUint16(offset + 2);
+
+            if (marker === 0xFFE1) { // App1 segment marker
+                exifData = parseExif(dataView, offset + 4, length - 2);
+                break;
+            }
+            offset += 2 + length;
+        }
+
+        if (exifData && exifData.lat && exifData.lon) {
+            recordExifData(exifData, path);
+        }
+    }
+
+    // WebP Chunk Hopping Parser (Runs early termination matching VP8X bitmap)
+    async function processWebpFile(file, path) {
+        // Fetch the first 30 bytes to check container headers and VP8X extended metadata bits
+        const headBuffer = await file.slice(0, 30).arrayBuffer();
+        const headView = new DataView(headBuffer);
+
+        if (headView.byteLength < 30) return;
+        if (headView.getUint32(0, false) !== 0x52494646) return; // "RIFF"
+        if (headView.getUint32(8, false) !== 0x57454250) return; // "WEBP"
+
+        const firstChunkId = headView.getUint32(12, false);
+
+        // Early termination: Simple lossy/lossless profiles never hold EXIF chunks
+        if (firstChunkId === 0x56503820 || firstChunkId === 0x5650384C) return; // "VP8 " or "VP8L"
+
+        if (firstChunkId === 0x56503858) { // "VP8X" (Extended layout container)
+            const flags = headView.getUint8(20); // Byte 20 holds layout configuration flag map
+            const hasExif = (flags & 0x08) !== 0; // Check if Bit 3 (EXIF metadata present) is true
+            if (!hasExif) return; // Bitmap states no metadata exists inside: terminate immediately!
+        } else {
+            return; // Exit on invalid formats
+        }
+
+        // Traverse WebP file chunks sequentially by checking chunk headers (hopping)
+        let offset = 12;
+        const fileSize = file.size;
+
+        while (offset + 8 <= fileSize) {
+            const headerBlob = file.slice(offset, offset + 8);
+            const headerBuffer = await headerBlob.arrayBuffer();
+            if (headerBuffer.byteLength < 8) break;
+            const headerView = new DataView(headerBuffer);
+
+            const chunkId = headerView.getUint32(0, false);
+            const chunkSize = headerView.getUint32(4, true); // WebP sizes are stored in Little Endian
+
+            if (chunkId === 0x45584946) { // "EXIF" Chunk Signature
+                // Extract EXIF data segment
+                const exifBlob = file.slice(offset + 8, offset + 8 + chunkSize);
+                const exifBuffer = await exifBlob.arrayBuffer();
+                const exifView = new DataView(exifBuffer);
+
+                const exifData = parseExif(exifView, 0, chunkSize);
+                if (exifData && exifData.lat && exifData.lon) {
+                    recordExifData(exifData, path);
+                }
+                break; // Parser complete, terminate seek operations
+            }
+
+            // Advance to the next chunk header (Chunk Header Size + Chunk Data + Pad Byte if odd)
+            const nextOffset = offset + 8 + chunkSize + (chunkSize % 2);
+            if (nextOffset <= offset) break; // Avoid loops on corruption
+            offset = nextOffset;
+        }
+    }
+
+    function recordExifData(exifData, path) {
+        let block = `${path}\n`;
+        block += `Date/Time: ${exifData.dateTime || '2000:01:01 00:00:00'}\n`;
+        block += `GPS: ${exifData.lat.toFixed(7)},${exifData.lon.toFixed(7)}\n`;
+        block += `Camera: ${exifData.camera || 'Standard Camera'}\n`;
+        outputLines.push(block);
+    }
+
+    // Unified EXIF Parser: Decodes raw TIFF structures (WebP) & JPEG envelopes
     function parseExif(view, startOffset, length) {
-        if (view.getUint32(startOffset) !== 0x45786966 || view.getUint16(startOffset + 4) !== 0x0000) return null;
-        
-        const tiffHeaderStart = startOffset + 6;
-        const isLittleEndian = (view.getUint16(tiffHeaderStart) === 0x4949);
-        
+        let tiffHeaderStart = startOffset;
+
+        // If JPEG-wrapped, peel back the "Exif\0\0" (6 bytes) signature prefix
+        if (view.byteLength >= startOffset + 6 &&
+            view.getUint32(startOffset) === 0x45786966 &&
+            view.getUint16(startOffset + 4) === 0x0000) {
+            tiffHeaderStart = startOffset + 6;
+        }
+
+        if (view.byteLength < tiffHeaderStart + 8) return null;
+
+        const sig = view.getUint16(tiffHeaderStart);
+        const isLittleEndian = (sig === 0x4949); // "II"
+        if (!isLittleEndian && sig !== 0x4D4D) return null; // "MM"
+
         if (view.getUint16(tiffHeaderStart + 2, isLittleEndian) !== 42) return null;
-        
+
         const ifd0Offset = view.getUint32(tiffHeaderStart + 4, isLittleEndian);
         let currentIfdOffset = tiffHeaderStart + ifd0Offset;
-        
+
         let metadata = { lat: null, lon: null, dateTime: '', camera: '' };
         let gpsInfoOffset = null;
         let make = '', model = '';
 
+        if (view.byteLength < currentIfdOffset + 2) return null;
         const numEntries0 = view.getUint16(currentIfdOffset, isLittleEndian);
         let entryPtr = currentIfdOffset + 2;
-        
+
         for (let i = 0; i < numEntries0; i++) {
+            if (view.byteLength < entryPtr + 12) break;
             const tag = view.getUint16(entryPtr, isLittleEndian);
             const valOffset = view.getUint32(entryPtr + 8, isLittleEndian);
-            
+
             if (tag === 0x010F) make = readAscii(view, tiffHeaderStart + valOffset);
             if (tag === 0x0110) model = readAscii(view, tiffHeaderStart + valOffset);
             if (tag === 0x8825) gpsInfoOffset = valOffset;
             if (tag === 0x9003 || tag === 0x0132) metadata.dateTime = readAscii(view, tiffHeaderStart + valOffset);
-            
+
             entryPtr += 12;
         }
-        
+
         metadata.camera = [make, model].filter(Boolean).join(' ').trim();
 
         if (gpsInfoOffset !== null) {
             let gpsPtr = tiffHeaderStart + gpsInfoOffset;
-            const numGpsEntries = view.getUint16(gpsPtr, isLittleEndian);
-            gpsPtr += 2;
-            
-            let latRef = 'N', lonRef = 'E';
-            let latDegrees = null, lonDegrees = null;
+            if (view.byteLength >= gpsPtr + 2) {
+                const numGpsEntries = view.getUint16(gpsPtr, isLittleEndian);
+                gpsPtr += 2;
 
-            for (let i = 0; i < numGpsEntries; i++) {
-                const tag = view.getUint16(gpsPtr, isLittleEndian);
-                const valOffset = view.getUint32(gpsPtr + 8, isLittleEndian);
-                
-                if (tag === 1) latRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
-                if (tag === 2) latDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
-                if (tag === 3) lonRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
-                if (tag === 4) lonDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
-                
-                gpsPtr += 12;
-            }
+                let latRef = 'N', lonRef = 'E';
+                let latDegrees = null, lonDegrees = null;
 
-            if (latDegrees && lonDegrees) {
-                metadata.lat = latDegrees[0] + latDegrees[1]/60 + latDegrees[2]/3600;
-                if (latRef === 'S') metadata.lat = -metadata.lat;
-                
-                metadata.lon = lonDegrees[0] + lonDegrees[1]/60 + lonDegrees[2]/3600;
-                if (lonRef === 'W') metadata.lon = -metadata.lon;
+                for (let i = 0; i < numGpsEntries; i++) {
+                    if (view.byteLength < gpsPtr + 12) break;
+                    const tag = view.getUint16(gpsPtr, isLittleEndian);
+                    const valOffset = view.getUint32(gpsPtr + 8, isLittleEndian);
+
+                    if (tag === 1) latRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
+                    if (tag === 2) latDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
+                    if (tag === 3) lonRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
+                    if (tag === 4) lonDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
+
+                    gpsPtr += 12;
+                }
+
+                if (latDegrees && lonDegrees) {
+                    metadata.lat = latDegrees[0] + latDegrees[1]/60 + latDegrees[2]/3600;
+                    if (latRef === 'S') metadata.lat = -metadata.lat;
+
+                    metadata.lon = lonDegrees[0] + lonDegrees[1]/60 + lonDegrees[2]/3600;
+                    if (lonRef === 'W') metadata.lon = -metadata.lon;
+                }
             }
         }
         return metadata;
@@ -400,6 +483,7 @@
     }
 
     function readRationalTriple(view, offset, lEnd) {
+        if (view.byteLength < offset + 24) return null;
         let vals = [];
         for (let i = 0; i < 3; i++) {
             const num = view.getUint32(offset + (i * 8), lEnd);
@@ -412,9 +496,9 @@
     async function finalizeExport() {
         updateStats();
         statusText.innerText = "Packaging local coordinate string database...";
-        
+
         const finalContent = `const rawImageData = \`\n${outputLines.join('\n')}\n\`;`;
-        
+
         processView.classList.add('hidden');
         completeView.classList.remove('hidden');
 
@@ -426,7 +510,7 @@
                 const writable = await fileHandle.createWritable();
                 await writable.write(finalContent);
                 await writable.close();
-                
+
                 chromeNotice.classList.remove('hidden');
             } catch (err) {
                 console.warn("Direct native drive write rejected, reverting system to manual trigger.", err);
@@ -445,7 +529,7 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
+
         firefoxNotice.classList.remove('hidden');
     }
 
