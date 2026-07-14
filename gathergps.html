@@ -1,598 +1,460 @@
 <!DOCTYPE html>
 <html lang="en">
-<!-- HTML+javascript to gather GPS data from directory tree into gpstagged.js 
-  (which needs to be "saved" to the root of the directory tree) so that gps.html has the data.
--->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GPS Image Mapper - High Capacity Streaming Scanner</title>
+    <title>GPS Image Data Gatherer</title>
     <style>
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            background-color: #1a1a1e;
-            color: #e5e7eb;
-            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f4f6f9;
+            color: #333;
+            max-width: 800px;
+            margin: 40px auto;
             padding: 20px;
-            display: flex;
-            justify-content: center;
         }
-        .container {
-            width: 100%;
-            max-width: 900px;
-            background-color: #24242c;
+        .card {
+            background: white;
+            border-radius: 8px;
             padding: 30px;
-            border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-        }
-        h1 {
-            margin-top: 0;
-            color: #ffffff;
-            font-size: 24px;
-            border-bottom: 2px solid #3f3f46;
-            padding-bottom: 12px;
-        }
-        p {
-            color: #9ca3af;
-            line-height: 1.5;
-        }
-        .drop-zone {
-            border: 3px dashed #4f46e5;
-            background-color: #1e1e24;
-            border-radius: 10px;
-            padding: 60px 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
             text-align: center;
-            font-size: 18px;
-            font-weight: 600;
-            color: #a5b4fc;
+        }
+        h1 { margin-top: 0; color: #2c3e50; }
+        .drop-zone {
+            border: 3px dashed #bdc3c7;
+            border-radius: 8px;
+            padding: 50px 20px;
+            background: #fafbfc;
             cursor: pointer;
+            transition: all 0.2s ease;
             margin: 20px 0;
-            transition: all 0.3s ease;
         }
-        .drop-zone.dragover {
-            background-color: #312e81;
-            border-color: #818cf8;
-            color: #ffffff;
+        .drop-zone.hover {
+            border-color: #3498db;
+            background: #edf7fe;
         }
-        .controls {
-            margin-bottom: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 15px;
-        }
-        button {
+        .btn {
+            background-color: #3498db;
             color: white;
             border: none;
-            padding: 14px 28px;
-            font-weight: bold;
+            padding: 12px 24px;
             font-size: 16px;
-            border-radius: 6px;
+            border-radius: 4px;
             cursor: pointer;
-            transition: background-color 0.2s ease;
+            font-weight: 600;
+            transition: background 0.2s;
+            display: inline-block;
+            text-decoration: none;
+            margin-top: 15px;
         }
-        #btnStop {
-            background-color: #ef4444;
+        .btn:hover { background-color: #2980b9; }
+        .btn-success { 
+            background-color: #2ecc71; 
+            font-size: 18px; 
+            padding: 15px 30px; 
+            box-shadow: 0 4px 10px rgba(46, 204, 113, 0.3);
+        }
+        .btn-success:hover { background-color: #27ae60; }
+        .status { margin: 20px 0; font-size: 16px; line-height: 1.6; }
+        .progress-container {
+            width: 100%;
+            background-color: #ecf0f1;
+            border-radius: 4px;
+            height: 8px;
+            margin: 15px 0;
             display: none;
-        }
-        #btnStop:hover { background-color: #dc2626; }
-        #btnDownload {
-            background-color: #10b981;
-            display: none;
-            animation: pulse 2s infinite;
-        }
-        #btnDownload:hover { background-color: #059669; }
-        @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
-            70% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
-            background-color: #18181b;
-            padding: 15px;
-            border-radius: 8px;
-            text-align: center;
-            border: 1px solid #3f3f46;
-        }
-        .stat-value {
-            font-size: 22px;
-            font-weight: bold;
-            color: #38bdf8;
-            margin-top: 5px;
-        }
-        .stat-value.success { color: #4ade80; }
-        .stat-value.warn { color: #fbbf24; }
-        .stat-label {
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #9ca3af;
-            letter-spacing: 0.5px;
-        }
-        .current-path {
-            background-color: #111827;
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-family: monospace;
-            font-size: 12px;
-            color: #9ca3af;
-            white-space: nowrap;
             overflow: hidden;
-            text-overflow: ellipsis;
-            margin-bottom: 15px;
-            border: 1px solid #1f2937;
         }
-        .log-box {
-            background-color: #0b0f19;
-            border-radius: 8px;
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background-color: #2ecc71;
+            transition: width 0.1s linear;
+        }
+        .hidden { display: none !important; }
+        .instructions {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
             padding: 15px;
-            height: 280px;
-            overflow-y: auto;
-            font-family: monospace;
-            font-size: 13px;
-            color: #34d399;
-            border: 1px solid #1f2937;
+            margin: 20px 0;
+            border-radius: 4px;
+            text-align: left;
+            font-size: 14px;
+            line-height: 1.5;
         }
-        .log-entry { margin-bottom: 3px; }
-        .log-error { color: #f87171; }
-        .log-info { color: #60a5fa; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>GPS Image Mapper - Stream Scanner (300k+ Files Optimization)</h1>
-    <p>
-        Drag your <strong>images root folder</strong> directly from your file system and drop it onto the target zone below.
-    </p>
+<div class="card">
+    <h1>GPS Image Data Indexer</h1>
+    <p>Scan your photo directories to build the coordinate database for your map layout.</p>
 
-    <div id="dropZone" class="drop-zone">
-        Drag & Drop Images Root Folder Here
-    </div>
-
-    <div class="controls">
-        <span id="lblStatus" style="font-weight: bold; color: #cbd5e1;">Status: Waiting for folder drop...</span>
-        <button id="btnStop">Stop & Save Progress</button>
-        <button id="btnDownload">Save Data to gpstagged.js</button>
-    </div>
-
-    <div class="current-path" id="currentPath">Current Folder: None</div>
-
-    <div class="stats-grid">
-        <div class="stat-card">
-            <div class="stat-label">Total Files Checked</div>
-            <div id="statTotal" class="stat-value">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">JPEGs Identified</div>
-            <div id="statJpegs" class="stat-value">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">GPS Locations Found</div>
-            <div id="statGps" class="stat-value success">0</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Skipped JPEGs</div>
-            <div id="statSkipped" class="stat-value warn">0</div>
+    <div id="setup-view">
+        <div id="drop-zone" class="drop-zone">
+            <p id="drop-text">Drag & Drop your Photos Folder here<br>or click to select</p>
+            <button id="picker-btn" class="btn">Select Folder</button>
         </div>
     </div>
 
-    <div id="logBox" class="log-box">
-        <div class="log-entry log-info">[System] Application initialized. Standing by for directory processing...</div>
+    <div id="process-view" class="hidden">
+        <div class="status" id="status-text">Preparing scanner...</div>
+        <div class="progress-container" id="progress-container">
+            <div class="progress-bar" id="progress-bar"></div>
+        </div>
+        <div id="stats" style="font-weight: bold; margin-top: 10px;"></div>
+    </div>
+
+    <div id="complete-view" class="hidden">
+        <div id="firefox-notice" class="instructions hidden">
+            <strong>⚠️ Firefox Action Required:</strong> Your browser has compiled and downloaded the <code>gpstagged.js</code> asset index file. You <strong>MUST</strong> manually drag/move this file out of your computer's <em>Downloads</em> folder and place it directly into the root of your images folder.<br><br>
+            <em>Note: Running this indexer inside Google Chrome or Microsoft Edge enables it to manage and save this file completely automatically!</em>
+        </div>
+
+        <div id="chrome-notice" class="instructions hidden" style="background-color: #d4edda; border-left-color: #28a745; color: #155724;">
+            <strong>✅ Success:</strong> Synchronization complete! The database modifications have been safely compiled and saved directly into <code>gpstagged.js</code> at the root of your selected directory.
+        </div>
+        
+        <p style="margin-top: 25px; margin-bottom: 25px; color: #7f8c8d;">The synchronization engine has concluded successfully. You can now load your navigation map.</p>
+        <a href="gps.html" class="btn btn-success">Browse Images on Map</a>
     </div>
 </div>
 
 <script>
-    const dropZone = document.getElementById('dropZone');
-    const lblStatus = document.getElementById('lblStatus');
-    const currentPathEl = document.getElementById('currentPath');
-    const statTotal = document.getElementById('statTotal');
-    const statJpegs = document.getElementById('statJpegs');
-    const statGps = document.getElementById('statGps');
-    const statSkipped = document.getElementById('statSkipped');
-    const logBox = document.getElementById('logBox');
-    const btnStop = document.getElementById('btnStop');
-    const btnDownload = document.getElementById('btnDownload');
+    const dropZone = document.getElementById('drop-zone');
+    const pickerBtn = document.getElementById('picker-btn');
+    const setupView = document.getElementById('setup-view');
+    const processView = document.getElementById('process-view');
+    const completeView = document.getElementById('complete-view');
+    const statusText = document.getElementById('status-text');
+    const statsDiv = document.getElementById('stats');
+    const progressContainer = document.getElementById('progress-container');
+    const firefoxNotice = document.getElementById('firefox-notice');
+    const chromeNotice = document.getElementById('chrome-notice');
 
-    let totalChecked = 0;
-    let totalJpegs = 0;
-    let gpsTaggedCount = 0;
-    let skippedCount = 0;
-    let entriesText = [];
-    let shouldStop = false;
-    let activeBlobUrl = null;
+    let processedFiles = 0;
+    let outputLines = [];
+    let isChromium = typeof window.showDirectoryPicker === 'function';
+    let targetDirectoryHandle = null;
 
-    // Defend page framework layout bounds against operational takeover bugs
-    window.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); }, false);
-    window.addEventListener('dragover', (e) => { 
-        e.preventDefault(); 
-        e.stopPropagation(); 
-        dropZone.classList.add('dragover');
-    }, false);
-    window.addEventListener('dragleave', (e) => { 
-        e.preventDefault(); 
-        e.stopPropagation(); 
-        dropZone.classList.remove('dragover');
-    }, false);
+    // Environmental Fallback Interface Tuning
+    if (!isChromium) {
+        pickerBtn.classList.add('hidden');
+        document.getElementById('drop-text').innerHTML = "Drag & Drop your Photos Folder here<br><small style='color:#7f8c8d;'>(Firefox requires folder drag-and-drop support)</small>";
+    }
 
-    window.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dropZone.classList.remove('dragover');
+    // Interactive Drag and Drop Boundary Events
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropZone.classList.add('hover');
+        }, false);
+    });
 
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('hover');
+        }, false);
+    });
+
+    dropZone.addEventListener('drop', async (e) => {
         const items = e.dataTransfer.items;
         if (!items || items.length === 0) return;
-
-        const item = items[0];
-        if (item.kind !== 'file') return;
-
-        // Revoke older local instance pointers to manage overall storage leaks cleanly
-        if (activeBlobUrl) {
-            URL.revokeObjectURL(activeBlobUrl);
-            activeBlobUrl = null;
-        }
-
-        totalChecked = 0; totalJpegs = 0; gpsTaggedCount = 0; skippedCount = 0;
-        entriesText = []; shouldStop = false;
-        dropZone.style.display = 'none';
-        btnDownload.style.display = 'none';
-        btnStop.style.display = 'block';
-        lblStatus.textContent = "Status: Initializing high-capacity storage streaming layer...";
-
-        if (typeof item.getAsFileSystemHandle === 'function') {
-            logToScreen(`[System] Modern File System Access Engine activated.`, "info");
+        
+        switchToProcessing();
+        
+        // Attempt to intercept direct Directory Handles if run on Chromium
+        if (isChromium && typeof items[0].getAsFileSystemHandle === 'function') {
             try {
-                const directoryHandle = await item.getAsFileSystemHandle();
-                if (!directoryHandle || directoryHandle.kind !== 'directory') {
-                    alert("Please drop a folder entry target.");
-                    resetUIState();
+                const handle = await items[0].getAsFileSystemHandle();
+                if (handle.kind === 'directory') {
+                    targetDirectoryHandle = handle;
+                    await scanModernDirectory(handle);
+                    await finalizeExport();
                     return;
                 }
-                logToScreen(`[Info] Opened direct streaming pipe on root: "${directoryHandle.name}"`, "info");
-                await traverseModernEngine(directoryHandle, "");
             } catch (err) {
-                logToScreen(`[Error] Modern engine sequence failed: ${err.message}`, "error");
+                console.warn("Modern folder drop capture bypassed, pivoting to legacy engine", err);
+            }
+        }
+        
+        // Native Firefox and standard fallback Engine
+        const entry = items[0].webkitGetAsEntry();
+        if (entry && entry.isDirectory) {
+            await scanLegacyDirectory(entry);
+            await finalizeExport();
+        } else {
+            alert("Operational Failure: Please drop a parent directory folder tree structure.");
+            resetUI();
+        }
+    });
+
+    if (isChromium) {
+        pickerBtn.addEventListener('click', async () => {
+            try {
+                targetDirectoryHandle = await window.showDirectoryPicker();
+                switchToProcessing();
+                await scanModernDirectory(targetDirectoryHandle);
+                await finalizeExport();
+            } catch (err) {
+                console.error(err);
+                resetUI();
+            }
+        });
+        
+        dropZone.addEventListener('click', (e) => {
+            if (e.target !== pickerBtn) pickerBtn.click();
+        });
+    }
+
+    function switchToProcessing() {
+        setupView.classList.add('hidden');
+        processView.classList.remove('hidden');
+        progressContainer.style.display = 'block';
+        statusText.innerText = "Indexing files inside structure...";
+        updateStats();
+    }
+
+    function updateStats() {
+        statsDiv.innerText = `Files Checked: ${processedFiles} | GPS Coordinate Records: ${outputLines.length}`;
+    }
+
+    // Chromium Asynchronous Streaming Engine Loop
+    async function scanModernDirectory(dirHandle, currentPath = "") {
+        statusText.innerText = `Traversing directory branch: ${currentPath || "Root Layout"}`;
+        for await (const entry of dirHandle.values()) {
+            const relativePath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
+            if (entry.kind === 'directory') {
+                await scanModernDirectory(entry, relativePath);
+            } else if (entry.kind === 'file') {
+                processedFiles++;
+                if (isImageFile(entry.name)) {
+                    const file = await entry.getFile();
+                    await processImageFile(file, relativePath);
+                }
+                if (processedFiles % 25 === 0) updateStats();
+            }
+        }
+    }
+
+    // Firefox Legacy Batch Engine Loop (Capped asynchronous processing chunks)
+    function scanLegacyDirectory(directoryEntry, currentPath = null) {
+        return new Promise((resolve) => {
+            // If currentPath is null, we are at the top-level dropped folder. 
+            // We bypass its name so paths save relative to its contents.
+            const relativePath = currentPath === null ? "" : (currentPath === "" ? directoryEntry.name : `${currentPath}/${directoryEntry.name}`);
+            
+            statusText.innerText = `Traversing directory branch: ${relativePath || "Root Content"}`;
+            
+            const dirReader = directoryEntry.createReader();
+            const bufferedEntries = [];
+    
+            const readBatch = () => {
+                dirReader.readEntries(async (entries) => {
+                    if (entries.length === 0) {
+                        for (const entry of bufferedEntries) {
+                            if (entry.isDirectory) {
+                                // Pass down the relative path string to children
+                                await scanLegacyDirectory(entry, relativePath);
+                            } else if (entry.isFile) {
+                                processedFiles++;
+                                if (isImageFile(entry.name)) {
+                                    const file = await getFileFromEntry(entry);
+                                    // Combine cleanly without trailing or leading slashes
+                                    const filePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+                                    await processImageFile(file, filePath);
+                                }
+                                if (processedFiles % 25 === 0) updateStats();
+                            }
+                        }
+                        resolve();
+                    } else {
+                        bufferedEntries.push(...entries);
+                        readBatch();
+                    }
+                }, () => resolve());
+            };
+            readBatch();
+        });
+    }
+
+    function getFileFromEntry(fileEntry) {
+        return new Promise((resolve, reject) => {
+            fileEntry.file(resolve, reject);
+        });
+    }
+
+    function isImageFile(filename) {
+        const ext = filename.split('.').pop().toLowerCase();
+        return ['jpg', 'jpeg'].includes(ext); // Extensible layout area for future image formats
+    }
+
+    async function processImageFile(file, path) {
+        try {
+            // Read target header payload block to verify EXIF allocations
+            const buffer = await file.slice(0, 32768).arrayBuffer();
+            const dataView = new DataView(buffer);
+            
+            if (dataView.getUint16(0) !== 0xFFD8) return; // Discard invalid streams
+            
+            let offset = 2;
+            let exifData = null;
+            
+            while (offset < dataView.byteLength - 2) {
+                const marker = dataView.getUint16(offset);
+                const length = dataView.getUint16(offset + 2);
+                
+                if (marker === 0xFFE1) { // Process App1 Allocation Target
+                    exifData = parseExif(dataView, offset + 4, length - 2);
+                    break;
+                }
+                offset += 2 + length;
+            }
+
+            if (exifData && exifData.lat && exifData.lon) {
+                let block = `${path}\n`;
+                block += `Date/Time: ${exifData.dateTime || '2000:01:01 00:00:00'}\n`;
+                block += `GPS: ${exifData.lat.toFixed(7)},${exifData.lon.toFixed(7)}\n`;
+                block += `Camera: ${exifData.camera || 'Standard Camera'}\n`;
+                outputLines.push(block);
+            }
+        } catch (e) {
+            console.error(`Parser evaluation collision on: ${path}`, e);
+        }
+    }
+
+    function parseExif(view, startOffset, length) {
+        if (view.getUint32(startOffset) !== 0x45786966 || view.getUint16(startOffset + 4) !== 0x0000) return null;
+        
+        const tiffHeaderStart = startOffset + 6;
+        const isLittleEndian = (view.getUint16(tiffHeaderStart) === 0x4949);
+        
+        if (view.getUint16(tiffHeaderStart + 2, isLittleEndian) !== 42) return null;
+        
+        const ifd0Offset = view.getUint32(tiffHeaderStart + 4, isLittleEndian);
+        let currentIfdOffset = tiffHeaderStart + ifd0Offset;
+        
+        let metadata = { lat: null, lon: null, dateTime: '', camera: '' };
+        let gpsInfoOffset = null;
+        let make = '', model = '';
+
+        const numEntries0 = view.getUint16(currentIfdOffset, isLittleEndian);
+        let entryPtr = currentIfdOffset + 2;
+        
+        for (let i = 0; i < numEntries0; i++) {
+            const tag = view.getUint16(entryPtr, isLittleEndian);
+            const valOffset = view.getUint32(entryPtr + 8, isLittleEndian);
+            
+            if (tag === 0x010F) make = readAscii(view, tiffHeaderStart + valOffset);
+            if (tag === 0x0110) model = readAscii(view, tiffHeaderStart + valOffset);
+            if (tag === 0x8825) gpsInfoOffset = valOffset;
+            if (tag === 0x9003 || tag === 0x0132) metadata.dateTime = readAscii(view, tiffHeaderStart + valOffset);
+            
+            entryPtr += 12;
+        }
+        
+        metadata.camera = [make, model].filter(Boolean).join(' ').trim();
+
+        if (gpsInfoOffset !== null) {
+            let gpsPtr = tiffHeaderStart + gpsInfoOffset;
+            const numGpsEntries = view.getUint16(gpsPtr, isLittleEndian);
+            gpsPtr += 2;
+            
+            let latRef = 'N', lonRef = 'E';
+            let latDegrees = null, lonDegrees = null;
+
+            for (let i = 0; i < numGpsEntries; i++) {
+                const tag = view.getUint16(gpsPtr, isLittleEndian);
+                const valOffset = view.getUint32(gpsPtr + 8, isLittleEndian);
+                
+                if (tag === 1) latRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
+                if (tag === 2) latDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
+                if (tag === 3) lonRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
+                if (tag === 4) lonDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
+                
+                gpsPtr += 12;
+            }
+
+            if (latDegrees && lonDegrees) {
+                metadata.lat = latDegrees[0] + latDegrees[1]/60 + latDegrees[2]/3600;
+                if (latRef === 'S') metadata.lat = -metadata.lat;
+                
+                metadata.lon = lonDegrees[0] + lonDegrees[1]/60 + lonDegrees[2]/3600;
+                if (lonRef === 'W') metadata.lon = -metadata.lon;
+            }
+        }
+        return metadata;
+    }
+
+    function readAscii(view, offset) {
+        let str = '';
+        while (offset < view.byteLength) {
+            const byte = view.getUint8(offset++);
+            if (byte === 0) break;
+            str += String.fromCharCode(byte);
+        }
+        return str.trim();
+    }
+
+    function readRationalTriple(view, offset, lEnd) {
+        let vals = [];
+        for (let i = 0; i < 3; i++) {
+            const num = view.getUint32(offset + (i * 8), lEnd);
+            const den = view.getUint32(offset + (i * 8) + 4, lEnd);
+            vals.push(den === 0 ? 0 : num / den);
+        }
+        return vals;
+    }
+
+    async function finalizeExport() {
+        updateStats();
+        statusText.innerText = "Packaging local coordinate string database...";
+        
+        const finalContent = `const rawImageData = \`\n${outputLines.join('\n')}\n\`;`;
+        
+        processView.classList.add('hidden');
+        completeView.classList.remove('hidden');
+
+        // Route processing context split based on write permissions
+        if (isChromium && targetDirectoryHandle) {
+            try {
+                // Requests/Overwrites file handles natively in location context
+                const fileHandle = await targetDirectoryHandle.getFileHandle('gpstagged.js', { create: true });
+                const writable = await fileHandle.createWritable();
+                await writable.write(finalContent);
+                await writable.close();
+                
+                chromeNotice.classList.remove('hidden');
+            } catch (err) {
+                console.warn("Direct native drive write rejected, reverting system to manual trigger.", err);
+                triggerManualDownload(finalContent);
             }
         } else {
-            logToScreen(`[System] Falling back to Legacy Entry Engine.`, "info");
-            const entry = item.webkitGetAsEntry();
-            if (!entry || !entry.isDirectory) {
-                alert("Please drop a folder entry target.");
-                resetUIState();
-                return;
-            }
-            logToScreen(`[Info] Opened access channel on legacy root node: "${entry.name}"`, "info");
-            await traverseLegacyEngine(entry, "");
+            triggerManualDownload(finalContent);
         }
+    }
+
+    function triggerManualDownload(textData) {
+        const blob = new Blob([textData], { type: 'application/javascript;charset=utf-8' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'gpstagged.js';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
         
-        finishAndExportFile();
-    }, false);
-
-    function logToScreen(message, type = "") {
-        const div = document.createElement('div');
-        div.className = 'log-entry';
-        if (type === 'error') div.className += ' log-error';
-        if (type === 'info') div.className += ' log-info';
-        div.textContent = message;
-        logBox.appendChild(div);
-        logBox.scrollTop = logBox.scrollHeight;
+        firefoxNotice.classList.remove('hidden');
     }
 
-    function updateUIFields() {
-        statTotal.textContent = totalChecked.toLocaleString();
-        statJpegs.textContent = totalJpegs.toLocaleString();
-        statGps.textContent = gpsTaggedCount.toLocaleString();
-        statSkipped.textContent = skippedCount.toLocaleString();
-    }
-
-    function resetUIState() {
-        dropZone.style.display = 'block';
-        btnStop.style.display = 'none';
-        btnDownload.style.display = 'none';
-        lblStatus.textContent = "Status: Waiting for folder drop...";
-    }
-
-    async function traverseModernEngine(dirHandle, currentRelativePath) {
-        if (shouldStop) return;
-        currentPathEl.textContent = `Scanning Folder: ${currentRelativePath || dirHandle.name}`;
-
-        for await (const entry of dirHandle.values()) {
-            if (shouldStop) return;
-
-            totalChecked++;
-            if (totalChecked % 1000 === 0) {
-                updateUIFields();
-                logToScreen(`[Progress] Checked ${totalChecked.toLocaleString()} files... Found ${gpsTaggedCount.toLocaleString()} GPS tags.`);
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
-
-            if (entry.name === 'gpstagged.js' || entry.name === 'gathergps.html') continue;
-            const nextPath = currentRelativePath ? `${currentRelativePath}/${entry.name}` : entry.name;
-
-            if (entry.kind === 'file') {
-                const nameLower = entry.name.toLowerCase();
-                if (nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg')) {
-                    totalJpegs++;
-                    await processFileObject(entry, nextPath, true);
-                }
-            } else if (entry.kind === 'directory') {
-                await traverseModernEngine(entry, nextPath);
-            }
-        }
-    }
-
-    async function traverseLegacyEngine(dirEntry, currentRelativePath) {
-        if (shouldStop) return;
-        currentPathEl.textContent = `Scanning Folder: ${currentRelativePath || dirEntry.name}`;
-
-        const reader = dirEntry.createReader();
-        let entries = [];
-
-        try {
-            while (true) {
-                const batch = await new Promise((resolve, reject) => {
-                    reader.readEntries(resolve, reject);
-                });
-                if (batch.length === 0) break;
-                entries.push(...batch);
-                await new Promise(resolve => setTimeout(resolve, 1));
-            }
-        } catch (err) {
-            logToScreen(`[Error] Legacy reader dropped inside "${currentRelativePath || 'root'}": ${err.message}`, "error");
-            return;
-        }
-
-        for (const entry of entries) {
-            if (shouldStop) return;
-
-            totalChecked++;
-            if (totalChecked % 1000 === 0) {
-                updateUIFields();
-                logToScreen(`[Progress] Checked ${totalChecked.toLocaleString()} files... Found ${gpsTaggedCount.toLocaleString()} GPS tags.`);
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
-
-            if (entry.name === 'gpstagged.js' || entry.name === 'gathergps.html') continue;
-            const nextPath = currentRelativePath ? `${currentRelativePath}/${entry.name}` : entry.name;
-
-            if (entry.isFile) {
-                const nameLower = entry.name.toLowerCase();
-                if (nameLower.endsWith('.jpg') || nameLower.endsWith('.jpeg')) {
-                    totalJpegs++;
-                    await processFileObject(entry, nextPath, false);
-                }
-            } else if (entry.isDirectory) {
-                await traverseLegacyEngine(entry, nextPath);
-            }
-        }
-    }
-
-    async function processFileObject(entry, relativePath, isModern) {
-        try {
-            const rawFile = isModern ? await entry.getFile() : await new Promise((resolve, reject) => entry.file(resolve, reject));
-            const partialChunk = rawFile.slice(0, 32768);
-            const buffer = await partialChunk.arrayBuffer();
-
-            const meta = parseExif(buffer);
-            if (meta && meta.latitude !== null && meta.longitude !== null) {
-                if (meta.latitude === 0.0 && meta.longitude === 0.0) {
-                    skippedCount++;
-                    return;
-                }
-                const dateTimeStr = meta.dateTime || "0000:00:00 00:00:00";
-                const cameraStr = meta.cameraModel || "????";
-                const latFixed = meta.latitude.toFixed(7);
-                const lonFixed = meta.longitude.toFixed(7);
-
-                entriesText.push(`${relativePath}\nDate/Time: ${dateTimeStr}\nGPS: ${latFixed},${lonFixed}\nCamera: ${cameraStr}`);
-                gpsTaggedCount++;
-            } else {
-                skippedCount++;
-            }
-        } catch (e) {
-            skippedCount++;
-        }
-    }
-
-    function parseExif(arrayBuffer) {
-        try {
-            const view = new DataView(arrayBuffer);
-            if (view.byteLength < 4 || view.getUint16(0, false) !== 0xFFD8) return null;
-
-            const length = view.byteLength;
-            let offset = 2;
-            let app1Offset = -1;
-
-            while (offset < length) {
-                if (offset + 4 > length) break;
-                if (view.getUint8(offset) !== 0xFF) break;
-                const marker = view.getUint8(offset + 1);
-
-                if (marker === 0xE1) {
-                    const exifHeaderOffset = offset + 4;
-                    if (exifHeaderOffset + 6 <= length) {
-                        if (view.getUint32(exifHeaderOffset, false) === 0x45786966 && view.getUint16(exifHeaderOffset + 4, false) === 0x0000) {
-                            app1Offset = offset;
-                            break;
-                        }
-                    }
-                }
-                if (marker === 0xD9) break;
-                const markerLength = view.getUint16(offset + 2, false);
-                if (markerLength < 2) break;
-                offset += 2 + markerLength;
-            }
-
-            if (app1Offset === -1) return null;
-
-            const tiffHeaderOffset = app1Offset + 10;
-            if (tiffHeaderOffset + 8 > length) return null;
-
-            let littleEndian = false;
-            const byteOrder = view.getUint16(tiffHeaderOffset);
-            if (byteOrder === 0x4949) littleEndian = true;
-            else if (byteOrder === 0x4D4D) littleEndian = false;
-            else return null;
-
-            if (view.getUint16(tiffHeaderOffset + 2, littleEndian) !== 0x002A) return null;
-            const firstIFDOffset = view.getUint32(tiffHeaderOffset + 4, littleEndian);
-            
-            let metadata = { dateTime: null, cameraModel: null, latitude: null, longitude: null };
-
-            function readString(strOffset, maxLength) {
-                let str = "";
-                for (let i = 0; i < maxLength; i++) {
-                    if (strOffset + i >= length) break;
-                    const char = view.getUint8(strOffset + i);
-                    if (char === 0) break;
-                    str += String.fromCharCode(char);
-                }
-                return str.trim();
-            }
-
-            function readRational(ratOffset, le) {
-                if (ratOffset + 8 > length) return 0;
-                const num = view.getUint32(ratOffset, le);
-                const den = view.getUint32(ratOffset + 4, le);
-                return den === 0 ? 0 : num / den;
-            }
-
-            function parseIFD(ifdOffset) {
-                if (tiffHeaderOffset + ifdOffset + 2 > length) return;
-                const numEntries = view.getUint16(tiffHeaderOffset + ifdOffset, littleEndian);
-                let entryOffset = tiffHeaderOffset + ifdOffset + 2;
-
-                let exifIFDPointer = 0;
-                let gpsIFDPointer = 0;
-
-                for (let i = 0; i < numEntries; i++) {
-                    if (entryOffset + 12 > length) break;
-                    const tag = view.getUint16(entryOffset, littleEndian);
-                    const count = view.getUint32(entryOffset + 4, littleEndian);
-                    const valueOffset = view.getUint32(entryOffset + 8, littleEndian);
-                    const inlineValueOffset = entryOffset + 8;
-                    const absoluteValueOffset = tiffHeaderOffset + valueOffset;
-
-                    if (tag === 0x0110) {
-                        metadata.cameraModel = readString(count <= 4 ? inlineValueOffset : absoluteValueOffset, count);
-                    } else if (tag === 0x0132) {
-                        metadata.dateTime = readString(count <= 4 ? inlineValueOffset : absoluteValueOffset, count);
-                    } else if (tag === 0x8769) {
-                        exifIFDPointer = view.getUint32(inlineValueOffset, littleEndian);
-                    } else if (tag === 0x8825) {
-                        gpsIFDPointer = view.getUint32(inlineValueOffset, littleEndian);
-                    }
-                    entryOffset += 12;
-                }
-
-                if (exifIFDPointer) parseExifIFD(exifIFDPointer);
-                if (gpsIFDPointer) parseGPSIFD(gpsIFDPointer);
-            }
-
-            function parseExifIFD(ifdOffset) {
-                if (tiffHeaderOffset + ifdOffset + 2 > length) return;
-                const numEntries = view.getUint16(tiffHeaderOffset + ifdOffset, littleEndian);
-                let entryOffset = tiffHeaderOffset + ifdOffset + 2;
-
-                for (let i = 0; i < numEntries; i++) {
-                    if (entryOffset + 12 > length) break;
-                    const tag = view.getUint16(entryOffset, littleEndian);
-                    const count = view.getUint32(entryOffset + 4, littleEndian);
-                    const valueOffset = view.getUint32(entryOffset + 8, littleEndian);
-
-                    if (tag === 0x9003) {
-                        metadata.dateTime = readString(count <= 4 ? (entryOffset + 8) : (tiffHeaderOffset + valueOffset), count);
-                    }
-                    entryOffset += 12;
-                }
-            }
-
-            function parseGPSIFD(ifdOffset) {
-                if (tiffHeaderOffset + ifdOffset + 2 > length) return;
-                const numEntries = view.getUint16(tiffHeaderOffset + ifdOffset, littleEndian);
-                let entryOffset = tiffHeaderOffset + ifdOffset + 2;
-
-                let latRef = "N", lonRef = "E";
-                let latDMS = null, lonDMS = null;
-
-                for (let i = 0; i < numEntries; i++) {
-                    if (entryOffset + 12 > length) break;
-                    const tag = view.getUint16(entryOffset, littleEndian);
-                    const valueOffset = view.getUint32(entryOffset + 8, littleEndian);
-                    const absoluteValueOffset = tiffHeaderOffset + valueOffset;
-
-                    if (tag === 1) latRef = String.fromCharCode(view.getUint8(entryOffset + 8)).toUpperCase();
-                    else if (tag === 2) {
-                        latDMS = [readRational(absoluteValueOffset, littleEndian), readRational(absoluteValueOffset + 8, littleEndian), readRational(absoluteValueOffset + 16, littleEndian)];
-                    } 
-                    else if (tag === 3) lonRef = String.fromCharCode(view.getUint8(entryOffset + 8)).toUpperCase();
-                    else if (tag === 4) {
-                        lonDMS = [readRational(absoluteValueOffset, littleEndian), readRational(absoluteValueOffset + 8, littleEndian), readRational(absoluteValueOffset + 16, littleEndian)];
-                    }
-                    entryOffset += 12;
-                }
-
-                if (latDMS && latDMS.length === 3) {
-                    let lat = latDMS[0] + (latDMS[1] / 60.0) + (latDMS[2] / 3600.0);
-                    if (latRef === 'S') lat = -lat;
-                    metadata.latitude = lat;
-                }
-                if (lonDMS && lonDMS.length === 3) {
-                    let lon = lonDMS[0] + (lonDMS[1] / 60.0) + (lonDMS[2] / 3600.0);
-                    if (lonRef === 'W') lon = -lon;
-                    metadata.longitude = lon;
-                }
-            }
-
-            parseIFD(firstIFDOffset);
-            return metadata;
-        } catch (e) {
-            return null;
-        }
-    }
-
-    btnStop.addEventListener('click', () => {
-        shouldStop = true;
-        lblStatus.textContent = "Status: Halting scanner loops... Compiling current data.";
-        logToScreen(`[Action] Abort triggered by user. Packaging metadata objects...`, "error");
-    });
-
-    // 100% Secure, user-gesture explicit click action listener
-    btnDownload.addEventListener('click', () => {
-        if (!activeBlobUrl) return;
-        const downloadLink = document.createElement('a');
-        downloadLink.href = activeBlobUrl;
-        downloadLink.download = 'gpstagged.js';
-        
-        // Temporarily append object layout context directly to physical DOM tree nodes
-        document.body.appendChild(downloadLink);
-        downloadLink.click();
-        document.body.removeChild(downloadLink);
-        
-        logToScreen(`[Success] File downloaded successfully. Ready for replacement inside your mapping directory!`, "info");
-    });
-
-    function finishAndExportFile() {
-        lblStatus.textContent = "Status: Scan Complete! Ready to Save.";
-        currentPathEl.textContent = "Current Folder: Scan Finished.";
-        btnStop.style.display = 'none';
-        dropZone.style.display = 'block';
-
-        updateUIFields();
-        logToScreen(`[Info] Formulating file payload text block arrays...`, "info");
-        
-        const fileString = `const rawImageData = \`\n${entriesText.join('\n\n')}\n\`;\n`;
-        const blob = new Blob([fileString], { type: 'application/javascript;charset=utf-8' });
-        activeBlobUrl = URL.createObjectURL(blob);
-
-        // Turn on the glowing click manual button
-        btnDownload.style.display = 'block';
-        logToScreen(`[Complete] Organized ${gpsTaggedCount.toLocaleString()} coordinates. Click the green button above to save your gpstagged.js file.`, "info");
+    function resetUI() {
+        setupView.classList.remove('hidden');
+        processView.classList.add('hidden');
+        completeView.classList.add('hidden');
+        processedFiles = 0;
+        outputLines = [];
     }
 </script>
 
