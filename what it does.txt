@@ -1,0 +1,27 @@
+The file "gps.html" is a HTML file containing a javascript program for browsing through tousands of images by coordinates.
+
+The program uses a previously generated "gpstagged.js" for a list of images to display.  Gpstagged.js defines one list as follows, with four lines for each image consisting of a relatove URL path to the image, Date/Time, Decimal Latitude and Longitude, and camera model.  Subsequent entries are separated by a blank line.
+
+const rawImageData = `
+2011/August/Margaret's BBQ/0822-201210_donald.jpg
+Date/Time: 2011:08:22 20:12:10
+GPS: 45.3403564,-75.7764850
+Camera: DSC-HX5V
+
+2011/August/Margaret's BBQ/0822-201220.jpg
+Date/Time: ....
+'
+
+The program draws a base map using openstreetmap tiles, or locally pre-generated base maps.  It then dots on the map representing where images were taken.  Image close together or with the same coordinates are represented by first brightening the dot, then growing it by cube root for the number of images it represents.  As the dot grows larger, it will encompass images that fall within its radius.
+
+As many images can fall on the same spot, a small amount of "jitter" is added to latitude and longitude so that when zoomed in closely, inages with the same coordinates are represented by many separte dots.
+
+The map can be panned and zoomed with the mouse or with touch inputs on mobile.  For speed, a smaller list of images visible within the current window is calculated and subsequently used for the view.  These images have pixel coordinates, so that lookups and display does not require conversion to and from latitude and longitude.
+
+Images can be selected with a mouse click, and a small preview of the image is shown in the top right of the window, along with metadata of the image.  The selected image is also shown as a red dot instead of a cyan one.  If the image is part of the cluster, the red dot is dranw on top of the circle represening the culuster.  If the mouse hovers over a different image from the selected image, that image is displayed instead, but when the mouse moves away from that image dot, it reverts to displaying the selected image preview, or no image if none is selected.
+The image in the preview links to the full size image,  the path in the preview image links to an index.html in the directory the image came from, and the GPS line links to google maps to pop up that coordinate
+
+A separate scale bar is displayed on the top left of the image, indicating how large a kilometer meter, or whatever currently is.
+There is also a button to display the current view on google maps.  in addition, a google maps URL may be dragged onto into the view, which sets the view to the coordinates and zoom level from the google maps URL.
+
+If an image is selected, it is also possible ot flip through images chronologically next and previous using the cursor keys, also home and end for first and last images.

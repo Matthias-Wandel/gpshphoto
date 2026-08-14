@@ -149,41 +149,6 @@ function parseData(text) {
     images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera > b.camera || a.dateTime > b.dateTime);
     //hilightSuspectCoordinates();
 }
-/*
-function hilightSuspectCoordinates()
-{
-    // Highlight suspiciously same coordinates from same device.
-    function DaySeconds(dateTime) // compute seconds since midnight.
-    {
-        const timePart = dateTime.split(' ')[1];
-        const [h, m, s] = timePart.split(':').map(Number);
-        const DaySeconds = (h * 3600) + (m * 60) + s;
-
-        console.log(dateTime,"===>",DaySeconds);
-        return DaySeconds
-    }
-
-    for (let n = 0; n < images.length-1;) {
-        let lat = images[n].lat
-        let x = n+1
-        // Find runs of same coordinate by same camera on same date.
-        for (; x < images.length;) {
-            if (lat != images[x].lat) break // coordinates the same.
-            if (images[n].lon != images[x].lon) break
-            if (images[n].dateTime.substring(0,10) != images[x].dateTime.substring(0,10)) break // same date
-            if (images[n].camera != images[x].camera) break; // Same camera
-            x += 1
-        }
-
-        if (x >= n+3){ // Min cluster of 3
-            let Tn = DaySeconds(images[n].dateTime)
-            let Tx = DaySeconds(images[x-1].dateTime)
-            if (Tx-Tn > 120) // Min time elapsed of 10 minutes
-                for (let y=n;y<x;y++) images[y].hl = 1 // Highlight the series
-        }
-        n = x; // Skip over identical group just identified
-    }
-}*/
 
 // --- COORDINATE TRANSFORMATIONS ---
 function lat2mercatorY(lat) {
