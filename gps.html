@@ -5,6 +5,7 @@
     <title>GPS Image Mapper</title>
     <script src="gpstagged.js"></script>
     <script src="basemaps/basemaps.js"></script>
+//    <script src="basemapcode.js"></script>
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         canvas { display: block; cursor: default; }
@@ -185,21 +186,21 @@ function hilightSuspectCoordinates()
 }*/
 
 // --- COORDINATE TRANSFORMATIONS ---
-// Converts a geographic Latitude into a normalized Mercator Y value (0.0 to 1.0)
 function lat2mercatorY(lat) {
+    // Converts a geographic Latitude into a normalized Mercator Y value (0.0 to 1.0)
     const rad = lat * Math.PI / 180;
     return (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2;
 }
 
 // Converts a normalized Mercator Y value back into a geographic Latitude
-function mercatorY2lat(y)
-{
+function mercatorY2lat(y){
+// Converts a normalized Mercator Y value back into a geographic Latitude
     const n = Math.PI - 2 * Math.PI * y;
     return 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
 }
 
-function latLon2xy(lat, lon)
-{
+function latLon2xy(lat, lon){
+// Latitude and Longitude to X Y pixel screen coordinates
     const centerMercatorY = lat2mercatorY(view.lat);
 
     // Scale horizontal longitude linearly
@@ -214,8 +215,9 @@ function latLon2xy(lat, lon)
     return { x, y };
 }
 
-function xy2latLon(x, y)
-{
+function xy2latLon(x, y){
+// X Y pixel screen coordinates to Latitude and Longitude
+
     // Reverse longitude mapping
     const lon = view.lon + (x - canvas.width / 2) / view.lonScale;
 
@@ -228,24 +230,24 @@ function xy2latLon(x, y)
     return { lat, lon };
 }
 
-function updateLatScale(newLatHeight)
-{
-    // 1. Establish the current Mercator height footprint
+function updateLatScale(newLatHeight){
+// On zooming in and out, update variables to new scale.
+    // Establish the current Mercator height footprint
     view.latHeight = newLatHeight;
     const topLat = view.lat + (newLatHeight / 2);
     const bottomLat = view.lat - (newLatHeight / 2);
 
-
     view.yHeight = lat2mercatorY(bottomLat) - lat2mercatorY(topLat);
 
-    // 2. Synchronize the horizontal pixels-per-degree multiplier
+    // Synchronize the horizontal pixels-per-degree multiplier
     // At Web Mercator scale, the full world width matches the full world height
     const totalWorldPixelHeight = canvas.height / view.yHeight;
     view.lonScale = totalWorldPixelHeight / 360;
 }
 
-// Object for cronologically going through visbleImages using cursor keys
+
 const chronological = {
+// Object for cronologically slecting previous and next image in visbleImages using cursor keys
     cronoIndexArray: null,
 
     clear() {
@@ -282,8 +284,8 @@ const chronological = {
     }
 };
 
-// Object for drawing OpenStreetMap tiles dynamically on the background
 const baseMap_OpenStreetMaps = {
+// Object for drawing OpenStreetMap tiles dynamically on the background
     tileCache: new Map(),
 
     init() {
@@ -375,8 +377,8 @@ const baseMap_OpenStreetMaps = {
 
 
 
-// Object for drawing selected base local basemap images captured from google maps
 const baseMap_CapturedLocal = {
+// Object for drawing selected base local basemap images captured from google maps
     maps: [],
 
     init() {
@@ -704,7 +706,7 @@ function draw() {
 
     ctx.save();
 
-    ctx.translate(view.dragOffset.x, view.dragOffset.y);
+    ctx.translate(view.dragOffset.x, view.dragOffset.y); // for use while panning via a drag.
 
     if (view.pinchScale !== 1.0) { // Scaling relative to the original pinch center
         ctx.translate(view.pinchStartCenter.x, view.pinchStartCenter.y);
@@ -748,6 +750,7 @@ function draw() {
 
 
 function findNearestImage(x, y, threshold) {
+// Find nearest image to the mouse pointer for highlight or selecting.
     if (visibleImages.length === 0) return null;
 
     // binary search to find the index closest to the target X coordinate as starting point
@@ -799,6 +802,7 @@ let mapButtonRect = { x: 0, y: 0, w: 0, h: 0 };
 let currentWidthMeters = 1000;
 
 function drawScaleBar(count) {
+// draw a legend showing what the current scale is.
     const metersPerDegreeLat = 111132;
     // pixels per degree / meters per degree
     const metersPerPixel = view.latHeight * metersPerDegreeLat / canvas.height;
@@ -835,14 +839,10 @@ function drawScaleBar(count) {
 
     ctx.restore();
 }
-function getThumbPath(fullPath) {
-    let p = fullPath.replace(/\\/g, '/');
-    let parts = p.split('/');
-    let fn = parts.pop();
-    return parts.length > 0 ? `${parts.join('/')}/_small/${fn}` : `_small/${fn}`;
-}
 
 function updateOverlay(img) {
+// Update selected or hovered over image thumbnail and info in top right of screen.
+
     if (!img) return;
     // If already showing this, do nothing (prevents blinking if image doesn't exist)
     if (currentPreview === img) return;
@@ -860,7 +860,14 @@ function updateOverlay(img) {
         previewImg.onerror = null;
     };
 
-    previewImg.src = getThumbPath(img.path);
+    {
+        // compute path to thumbnail (which may be in a directory called _small)
+        let p = currentPreview.path.replace(/\\/g, '/');
+        let parts = p.split('/');
+        let fn = parts.pop();
+        previewImg.src = parts.length > 0 ? `${parts.join('/')}/_small/${fn}` : `_small/${fn}`;
+    }
+
     infoText.innerHTML = '';
     const addLink = (txt, action) => {
         const s = document.createElement('div');
@@ -882,8 +889,9 @@ function updateOverlay(img) {
 }
 
 
-// Prevent default to allow drop
+
 window.addEventListener('dragover', e => {
+// Prevent default to allow drop of google maps URL onto this page.
     e.preventDefault();
     e.dataTransfer.dropEffect = 'copy';
 });
@@ -948,7 +956,8 @@ const handleMove = (x, y, isTouch) => {
 };
 
 
-const finalizeInteraction = () => {
+const finalizePanZoomInteraction = () => {
+
     if (view.pinchScale !== 1.0) {
         // Commit Pinch/Pan combination
         const b = xy2latLon(view.pinchStartCenter.x, view.pinchStartCenter.y);
@@ -986,12 +995,13 @@ const finalizeInteraction = () => {
 
 canvas.addEventListener('touchstart', e => {
     // Finish any existing motion before starting a new one
-    if (view.dragging || view.pinchScale !== 1.0) finalizeInteraction();
+    if (view.dragging || view.pinchScale !== 1.0) finalizePanZoomInteraction();
 
     if (e.touches.length === 1) {
+        // Single finger drag is pan only.
         handleStart(e.touches[0].clientX, e.touches[0].clientY, true);
     } else if (e.touches.length === 2) {
-        // Switch to pinch mode
+        // Switch to pinch zoom in/out/drag mode.
         view.pinchInitialDist =
             Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
                        e.touches[0].clientY - e.touches[1].clientY);
@@ -1006,6 +1016,7 @@ canvas.addEventListener('touchstart', e => {
 
 
 canvas.addEventListener('touchmove', e => {
+// Single ad dual finger actions on mobile screen
     e.preventDefault();
     if (e.touches.length === 1) {
         // Just a lateral drag.
@@ -1034,7 +1045,7 @@ canvas.addEventListener('touchmove', e => {
 }, {passive: false});
 
 canvas.addEventListener('touchend', e => {
-    finalizeInteraction();
+    finalizePanZoomInteraction();
     if (e.touches.length === 1) {
         // If one finger is still down, immediately start a new pan context
         // so the remaining finger can continue moving the map.
@@ -1049,11 +1060,13 @@ uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
 window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY, false));
 
 window.addEventListener('mouseup', () => {
-    if (view.dragging) finalizeInteraction();
+// end of mouse drag pan.
+    if (view.dragging) finalizePanZoomInteraction();
 });
 
 
 canvas.addEventListener('wheel', e => {
+// For zooming using mouse wheel
     e.preventDefault();
     const b = xy2latLon(e.clientX, e.clientY);
 
@@ -1081,6 +1094,7 @@ previewImg.onclick = openFullImage;
 previewImg.ontouchend = openFullImage;
 
 window.addEventListener('keydown', (e) => {
+// Cursor keys used to flip through images cronologically.
     if (visibleImages.length === 0) return;
 
     let action = null;
