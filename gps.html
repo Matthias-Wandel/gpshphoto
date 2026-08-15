@@ -5,11 +5,16 @@
     <title>GPS Image Mapper</title>
     <script src="gpstagged.js"></script>
     <script src="basemaps/basemaps.js"></script>
-//    <script src="basemapcode.js"></script>
+    <!--<script src="basemapcode.js"></script>-->
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         canvas { display: block; cursor: default; }
 
+        #top-left-overlay {
+            position: absolute; top: 10px; left: 10px; z-index: 1000;
+            pointer-events: none; /* Touches pass through to the map */
+        }
+        
         #ui-overlay {
             position: absolute; top: 10px; right: 10px; width: 320px;
             background: rgba(255, 255, 255, 0.95); padding: 12px;
@@ -25,11 +30,14 @@
 </head>
 <body>
 
+<div id="top-left-overlay">
+    <canvas id="overlayCanvas" width="400" height="80"></canvas>
+</div>
+
 <div id="ui-overlay">
     <img id="preview-img" alt="Preview">
     <div id="info-text"></div>
 </div>
-
 
 <a id="map-link" target="_blank" style="
     position: absolute; top: 18px; left: 0;
@@ -48,6 +56,9 @@ const ctx = canvas.getContext('2d');
 const uiOverlay = document.getElementById('ui-overlay');
 const previewImg = document.getElementById('preview-img');
 const infoText = document.getElementById('info-text');
+
+const overlayCanvas = document.getElementById('overlayCanvas');
+const overlayCtx = overlayCanvas.getContext('2d');
 
 let images = [];
 let visibleImages = [];
@@ -488,6 +499,10 @@ if (typeof BasemapsDir !== 'undefined' && BasemapsDir) {
     baseMap = baseMap_OpenStreetMaps
 }
 
+function drawOverlayUI() {
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    drawScaleBar(visibleImages.length);
+}
 
 // --- DRAWING & CLUSTERING ---
 function updateVisibleData() {
@@ -662,7 +677,7 @@ function updateVisibleData() {
         currentPreview.x = pt.x;
         currentPreview.y = pt.y;
     }
-
+    drawOverlayUI();
     draw();
 }
 
@@ -710,7 +725,6 @@ function draw() {
     }
 
     ctx.restore();
-    drawScaleBar(visibleImages.length);
 }
 
 
@@ -786,13 +800,13 @@ function drawScaleBar(count) {
     const label = bestMeters >= 1000 ? (bestMeters / 1000) + " km" : bestMeters + " m";
 
     const x = 20, y = 30;
-    ctx.save(); ctx.resetTransform();
+    overlayCtx.save(); overlayCtx.resetTransform();
 
     // Draw Scale Line
-    ctx.strokeStyle = "white"; ctx.fillStyle = "white"; ctx.lineWidth = 2; ctx.font = "bold 14px sans-serif";
-    ctx.beginPath(); ctx.moveTo(x, y-5); ctx.lineTo(x, y+5); ctx.moveTo(x, y); ctx.lineTo(x+barWidth, y); ctx.moveTo(x+barWidth, y-5); ctx.lineTo(x+barWidth, y+5); ctx.stroke();
-    ctx.textAlign = "center"; ctx.fillText(label, x + (barWidth / 2), y - 10);
-    ctx.textAlign = "left"; ctx.font = "13px sans-serif"; ctx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 25);
+    overlayCtx.strokeStyle = "white"; overlayCtx.fillStyle = "white"; overlayCtx.lineWidth = 2; overlayCtx.font = "bold 14px sans-serif";
+    overlayCtx.beginPath(); overlayCtx.moveTo(x, y-5); overlayCtx.lineTo(x, y+5); overlayCtx.moveTo(x, y); overlayCtx.lineTo(x+barWidth, y); overlayCtx.moveTo(x+barWidth, y-5); overlayCtx.lineTo(x+barWidth, y+5); overlayCtx.stroke();
+    overlayCtx.textAlign = "center"; overlayCtx.fillText(label, x + (barWidth / 2), y - 10);
+    overlayCtx.textAlign = "left"; overlayCtx.font = "13px sans-serif"; overlayCtx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 25);
 
     // Position the HTML anchor tag dynamically
     const mapLink = document.getElementById('map-link');
@@ -802,7 +816,7 @@ function drawScaleBar(count) {
         mapLink.style.display = 'block'; // Show it once calculated
     }
 
-    ctx.restore();
+    overlayCtx.restore();
 }
 
 function updateOverlay(img) {
