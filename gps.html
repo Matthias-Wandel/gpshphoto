@@ -501,11 +501,6 @@ if (typeof BasemapsDir !== 'undefined' && BasemapsDir) {
 }
 
 
-//function drawOverlayUI() {
-//    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-//    drawScaleBar(visibleImages.length);
-//}
-
 // --- DRAWING & CLUSTERING ---
 function updateVisibleData() {
     updateLatScale(view.latHeight)
@@ -680,32 +675,7 @@ function updateVisibleData() {
         currentPreview.y = pt.y;
     }
 
-    //--------------------------------------------------------------------------
-    // Compute histogram bins.
-    let tempBins = new Array(100).fill(0);
-    let tempMax = 0;
-    const startMs = new Date("2010/01/01 00:00:00").getTime();
-    const endMs = new Date("2027/01/01 00:00:00").getTime();
-    const timeSpan = endMs - startMs;
-
-    for (let img of visibleImages) {
-        if (!img.dateTime) continue;
-
-        // Convert EXIF "YYYY:MM:DD HH:MM:SS" to JS-friendly "YYYY/MM/DD HH:MM:SS"
-        const safeDateStr = img.dateTime.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1/$2/$3');
-        const timestamp = new Date(safeDateStr).getTime();
-
-        if (!isNaN(timestamp)) {
-            let index = Math.floor(((timestamp - startMs) / timeSpan) * 100);
-            if (index >= 0 && index < 100) {
-                tempBins[index]++;
-                if (tempBins[index] > tempMax) tempMax = tempBins[index];
-            }
-        }
-    }
-
-    overlayUI.setData(tempBins, tempMax); // Save it to overlay object
-
+    overlayUI.updateTimeline(visibleImages);
 
     draw();
     overlayUI.draw(visibleImages.length);
@@ -814,16 +784,57 @@ let currentWidthMeters = 1000;
 const overlayUI = {
     bins: new Array(100).fill(0),
     maxBinValue: 0,
+    startYear: 2010, endYear: 2027, // Defaults that will be overwritten
 
-    setData: function(newBins, newMax) {
-        this.bins = newBins;
-        this.maxBinValue = newMax;
+    updateTimeline: function(images) {
+        // Update histogram based on new set of visible images.
+        this.bins.fill(0);
+        this.maxBinValue = 0;
+
+        let parsedTimestamps = [];
+        let minTime = Infinity;
+        let maxTime = -Infinity;
+
+        // Find min and max times efficiently
+        for (let img of images) {
+            if (!img.dateTime) continue;
+            const safeDateStr = img.dateTime.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1/$2/$3');
+            const timestamp = new Date(safeDateStr).getTime();
+            if (!isNaN(timestamp)) {
+                parsedTimestamps.push(timestamp);
+                if (timestamp < minTime) minTime = timestamp;
+                if (timestamp > maxTime) maxTime = timestamp;
+            }
+        }
+
+        if (parsedTimestamps.length === 0) return;
+
+        // Round time scale to year boundaries.
+        this.startYear = new Date(minTime).getFullYear();
+        this.endYear = new Date(maxTime).getFullYear();
+
+        const startMs = new Date(this.startYear + "/01/01 00:00:00").getTime();
+        const endMs = new Date((this.endYear + 1) + "/01/01 00:00:00").getTime();
+        const timeSpan = endMs - startMs;
+
+        // Now bin the data.
+        for (let timestamp of parsedTimestamps) {
+            let index = Math.floor(((timestamp - startMs) / timeSpan) * 100);
+            if (index === 100) index = 99; // Safety clamp if time lands exactly on endMs
+            if (index >= 0 && index < 100) {
+                this.bins[index]++;
+                if (this.bins[index] > this.maxBinValue) this.maxBinValue = this.bins[index];
+            }
+        }
     },
+
 
     drawHistogram: function() {
         if (this.maxBinValue === 0) return;
 
         overlayCtx.fillStyle = 'rgba(60, 180, 255, 1)';
+
+        // Bar length leaves 10 pix on either end so legend below still fits.
         const barWidth = (overlayCanvas.width-20) / 100; // 4px per bar
 
         const histHeight = 50;
@@ -833,7 +844,7 @@ const overlayUI = {
             if (this.bins[i] > 0) {
                 // Draw in the bottom 50px of the canvas
                 const height = (this.bins[i] / this.maxBinValue) * histHeight;
-                overlayCtx.fillRect(i * barWidth+10, histBottom - height, barWidth - 0.5, height);
+                overlayCtx.fillRect(i * barWidth+10, histBottom - 1 - height, barWidth - 0.5, height);
             }
         }
 
@@ -847,26 +858,26 @@ const overlayUI = {
 
         // Draw ticks and years
         overlayCtx.fillStyle = 'rgba(255, 255, 255, 1)';
-        overlayCtx.font = '10px sans-serif';
+        overlayCtx.font = '12px sans-serif';
         overlayCtx.textBaseline = 'top';
 
-        const startMs = new Date("2014/01/01 00:00:00").getTime();
-        const endMs = new Date("2027/01/01 00:00:00").getTime();
+        const startMs = new Date(this.startYear + "/01/01 00:00:00").getTime();
+        const endYearCap = this.endYear + 1; // End of the year is start of the next
+        const endMs = new Date(endYearCap + "/01/01 00:00:00").getTime();
         const timeSpan = endMs - startMs;
 
-        for (let year = 2010; year <= 2027; year++) {
+        for (let year = this.startYear; year <= endYearCap; year++) {
             const yearMs = new Date(year + "/01/01 00:00:00").getTime();
             const x = ((yearMs - startMs) / timeSpan) * (overlayCanvas.width-20) + 10;
 
             overlayCtx.beginPath();
             overlayCtx.moveTo(x, histBottom);
-            overlayCtx.lineTo(x, histBottom + 5); // 5 pixel tick
+            overlayCtx.lineTo(x, histBottom + 8); // 5 pixel tick
             overlayCtx.stroke();
-
             overlayCtx.textAlign = 'center';
 
             const shortYear = (year % 100).toString().padStart(2, '0');
-            overlayCtx.fillText(shortYear, x, histBottom + 8);
+            overlayCtx.fillText(shortYear, x, histBottom + 10);
         }
 
     },
@@ -896,8 +907,8 @@ const overlayUI = {
         // Draw Scale Line
         overlayCtx.strokeStyle = "white"; overlayCtx.fillStyle = "white"; overlayCtx.lineWidth = 2; overlayCtx.font = "bold 14px sans-serif";
         overlayCtx.beginPath(); overlayCtx.moveTo(x, y-5); overlayCtx.lineTo(x, y+5); overlayCtx.moveTo(x, y); overlayCtx.lineTo(x+barWidth, y); overlayCtx.moveTo(x+barWidth, y-5); overlayCtx.lineTo(x+barWidth, y+5); overlayCtx.stroke();
-        overlayCtx.textAlign = "center"; overlayCtx.fillText(label, x + (barWidth / 2), y - 10);
-        overlayCtx.textAlign = "left"; overlayCtx.font = "13px sans-serif"; overlayCtx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 25);
+        overlayCtx.textAlign = "center"; overlayCtx.fillText(label, x + (barWidth / 2), y - 15);
+        overlayCtx.textAlign = "left"; overlayCtx.font = "13px sans-serif"; overlayCtx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 15);
 
         // Position the HTML anchor tag dynamically
         const mapLink = document.getElementById('map-link');
