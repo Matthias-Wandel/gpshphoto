@@ -791,11 +791,11 @@ let currentWidthMeters = 1000;
 const overlayUI = {
     bins: new Array(100).fill(0),
     maxBinValue: 0,
-    startMs: new Date("2010/01/01 00:00:00").getTime(), 
-    endMs: new Date("2027/01/01 00:00:00").getTime(),    
-    
-    filterStartMs: null,
-    filterEndMs: null,
+    startMs: new Date("2010/01/01 00:00:00").getTime(),
+    endMs: new Date("2027/01/01 00:00:00").getTime(),
+
+    filterStartMs: new Date("1980/01/01 00:00:00").getTime(),
+    filterEndMs: new Date("2100/01/01 00:00:00").getTime(),
     startX: 0,
     endX: 0,
     histLeft: 10,
@@ -829,14 +829,11 @@ const overlayUI = {
         // Round down to start of min year, round up to start of year AFTER max year
         const sYear = new Date(minTime).getFullYear();
         const eYear = new Date(maxTime).getFullYear();
-        
+
         this.startMs = new Date(sYear + "/01/01 00:00:00").getTime();
         this.endMs = new Date((eYear + 1) + "/01/01 00:00:00").getTime();
-        
-        this.timeSpan = this.endMs - this.startMs;
 
-        if (this.filterStartMs === null) this.filterStartMs = this.startMs; // FIXME -- should have +/- inf defaults.
-        if (this.filterEndMs === null) this.filterEndMs = this.endMs;
+        this.timeSpan = this.endMs - this.startMs;
 
         // Now bin the data.
         for (let timestamp of parsedTimestamps) {
@@ -856,16 +853,19 @@ const overlayUI = {
         // Convert pixel to time
         //let ratio = mouseX / this.histWidth;
         let ratio = mouseX / overlayCanvas.width;
-        console.log(`Ratio: ${ratio}`);
         ratio = Math.max(0, Math.min(1, ratio)); // Clamp to canvas edges
-        const targetMs = this.startMs + (ratio * this.timeSpan);
+        let targetMs = this.startMs + (ratio * this.timeSpan);
 
-        // Prevent handles from crossing (10 day minimum gap)
-        const minGap = 864000000; 
+        // Logic to make the handles sticky at start and end, also minimum gap betwen the handles.
+        const minGap = 864000000;
         if (dragType === 'start-handle') {
-            this.filterStartMs = Math.min(targetMs, this.filterEndMs - minGap);
+            targetMS = Math.min(targetMs, this.filterEndMs - minGap); // don't cross the handles.
+            if (targetMS <= this.startMs) targetMS = new Date("1980/01/01 00:00:00").getTime(); // Make it stick to the right.
+            this.filterStartMs = targetMS;
         } else if (dragType === 'end-handle') {
-            this.filterEndMs = Math.max(targetMs, this.filterStartMs + minGap);
+            targetMS = Math.max(targetMs, this.filterStartMs + minGap);
+            if (targetMS >= this.endMs) targetMS = new Date("2100/01/01 00:00:00").getTime();
+            this.filterEndMs = targetMS;
         }
     },
 
@@ -887,9 +887,8 @@ const overlayUI = {
         this.endX = ((this.filterEndMs - this.startMs) / this.timeSpan) * overlayCanvas.width;
 
         // Make sure handles are visible
-        if (this.startX < this.histLeft) this.startX = this.histLeft;
-        if (this.endX > this.histLeft+this.histWidth) this.endX = this.histLeft+this.histWidth;
-
+        this.startX = Math.min(Math.max(this.startX,this.histLeft), this.histLeft+this.histWidth)
+        this.endX = Math.min(Math.max(this.endX,this.histLeft), this.histLeft+this.histWidth)
 
         // Draw the time histogram bars.
         for (let i = 0; i < 100; i++) {
@@ -924,7 +923,7 @@ const overlayUI = {
 
         const sYear = new Date(this.startMs).getFullYear();
         const eYearCap = new Date(this.endMs).getFullYear(); // endMs is already the start of the next year
-          
+
         for (let year = sYear; year <= eYearCap; year++) {
             const yearMs = new Date(year + "/01/01 00:00:00").getTime();
             const x = ((yearMs - this.startMs) / this.timeSpan) * (this.histWidth) + this.histLeft;
@@ -938,7 +937,7 @@ const overlayUI = {
             const shortYear = (year % 100).toString().padStart(2, '0');
             overlayCtx.fillText(shortYear, x, histBottom + 10);
         }
-        
+
         // Draw Handles
         overlayCtx.strokeStyle = 'rgba(255, 180, 255, 1)';
         overlayCtx.lineWidth = 3;
@@ -952,7 +951,7 @@ const overlayUI = {
         overlayCtx.moveTo(this.endX, histBottom -10);
         overlayCtx.lineTo(this.endX, histBottom + 5);
         overlayCtx.stroke();
-        
+
 
     },
 
@@ -1316,7 +1315,7 @@ hitbox.addEventListener('pointermove', (e) => {
     if (activeTimelineDrag) {
         console.log('DRAGGING:', activeTimelineDrag, '| X:', mouseX);
         overlayUI.setFilterFromX(activeTimelineDrag, mouseX);
-        updateVisibleData();        
+        updateVisibleData();
     } else {
         // Dynamic hover cursor styling
         if (Math.abs(mouseX - overlayUI.startX) < 10 || Math.abs(mouseX - overlayUI.endX) < 10) {
