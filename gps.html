@@ -155,18 +155,34 @@ function initData() {
 function parseData(text) {
     const lines = text.trim().split(/\r?\n/);
     images = [];
+
     for (let i = 0; i < lines.length; i++) {
         let path = lines[i].trim();
+
         // Skip JS wrapper lines if they are included in the string
         if (!path || path.startsWith("const") || path.endsWith("`;")) continue;
-        let dtl = (lines[++i] || "").replace('Date/Time: ', '').trim();
+
+        const p = lines[++i].match(/\d+/g); // Grab the numbers
+        let ms = new Date(p[0], p[1] - 1, p[2], p[3], p[4], p[5]).getTime();
+
         let gl = (lines[++i] || "");
         let cl = (lines[++i] || "").replace('Camera: ', '').trim();
         const m = gl.match(/GPS:\s*([\d.-]+),\s*([\d.-]+)/);
-        if (m) images.push({ path, dateTime: dtl, lat: parseFloat(m[1]), lon: parseFloat(m[2]), camera: cl || "Unknown",hl:0 });
+
+        if (m) {
+            // Build the element clearly before pushing
+            let imageElement = {
+                path: path,
+                timeMs: ms,
+                lat: parseFloat(m[1]),
+                lon: parseFloat(m[2]),
+                camera: cl || "Unknown",
+                hl: 0
+            };
+            images.push(imageElement);
+        }
     }
-    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera > b.camera || a.dateTime > b.dateTime);
-    //hilightSuspectCoordinates();
+    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera > b.camera || a.timeMs - b.timeMs);
 }
 
 // --- COORDINATE TRANSFORMATIONS ---
@@ -808,23 +824,16 @@ const overlayUI = {
         this.bins.fill(0);
         this.maxBinValue = 0;
 
-        let parsedTimestamps = [];
         let minTime = Infinity;
         let maxTime = -Infinity;
 
         // Find min and max times efficiently
         for (let img of images) {
-            if (!img.dateTime) continue;
-            const safeDateStr = img.dateTime.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1/$2/$3');
-            const timestamp = new Date(safeDateStr).getTime();
-            if (!isNaN(timestamp)) {
-                parsedTimestamps.push(timestamp);
-                if (timestamp < minTime) minTime = timestamp;
-                if (timestamp > maxTime) maxTime = timestamp;
-            }
+            if (img.timeMs == 0) continue;
+            if (img.timeMs < minTime) minTime = img.timeMs;
+            if (img.timeMs > maxTime) maxTime = img.timeMs;
         }
-
-        if (parsedTimestamps.length === 0) return;
+console.log(minTime+","+maxTime)
 
         // Round down to start of min year, round up to start of year AFTER max year
         const sYear = new Date(minTime).getFullYear();
@@ -836,8 +845,8 @@ const overlayUI = {
         this.timeSpan = this.endMs - this.startMs;
 
         // Now bin the data.
-        for (let timestamp of parsedTimestamps) {
-            let index = Math.floor(((timestamp - this.startMs) / this.timeSpan) * 100);
+        for (let img of images) {
+            let index = Math.floor(((img.timeMs - this.startMs) / this.timeSpan) * 100);
             if (index === 100) index = 99; // Safety clamp if time lands exactly on endMs
             if (index >= 0 && index < 100) {
                 this.bins[index]++;
@@ -1042,7 +1051,22 @@ function updateOverlay(img) {
         const p = img.path.replace(/\\/g, '/');
         window.open(p.substring(0, p.lastIndexOf('/')) + '/index.html', '_blank');
     });
-    infoText.appendChild(document.createTextNode(`\n${img.dateTime}\n`));
+
+    console.log(selectedImage)
+    let dateString = "Unknown";
+    if (img.timeMs) {
+        const d = new Date(img.timeMs);
+        // Rebuild string as YYYY:MM:DD HH:MM:SS
+        dateString = d.getFullYear() + ':' +
+                     (d.getMonth() + 1).toString().padStart(2, '0') + ':' +
+                     d.getDate().toString().padStart(2, '0') + ' ' +
+                     d.getHours().toString().padStart(2, '0') + ':' +
+                     d.getMinutes().toString().padStart(2, '0') + ':' +
+                     d.getSeconds().toString().padStart(2, '0');
+    }
+    infoText.appendChild(document.createTextNode(`\nDate/Time: ${dateString}\n`));
+
+
     addLink(`GPS: ${img.lat.toFixed(6)}, ${img.lon.toFixed(6)}`, () => {
         window.open(`https://www.google.com/maps?q=${img.lat},${img.lon}`, '_blank');
     });
