@@ -439,7 +439,6 @@ const baseMap_CapturedLocal = {
                 // Print the extents to the console
                 console.log(`Basemap Loaded: ${entry.fileName}  ${imgW}x${imgH}`);
                 console.log(`  Lat,Lon: ${entry.minLat.toFixed(6)} to ${entry.maxLat.toFixed(6)},  ${entry.minLon.toFixed(6)} to ${entry.maxLon.toFixed(6)}`);
-                //console.log(`  Vertical Span: ${entry.latH.toFixed(6)} degrees`);
             }else{
                 console.log("no match:" , line)
             }
@@ -562,7 +561,23 @@ function updateVisibleData() {
             visibleImages.push(img);
         }
     }
-    //console.log(`Slice: ${endIndex - startIndex} show: ${visibleImages.length}`);
+
+    // Provide list without temoral filtering for purpsoe of histogram ot overlayUI
+    overlayUI.updateTimeline(visibleImages);
+
+    // Next apply temporal filtering.
+    let temporalVisible = []
+    for (let i = startIndex; i < endIndex; i++) {
+        const img = images[i];
+        if (img.timeMs) {
+            if (img.timeMs >= overlayUI.filterStartMs && img.timeMs <= overlayUI.filterEndMs) {
+                temporalVisible.push(img)
+            }
+        }
+    }
+    console.log(`Temporal filter: ${temporalVisible.length} of ${visibleImages.length}`);
+    visibleImages = temporalVisible
+
 
     const latRad = view.lat * Math.PI / 180;
     const pixelsPerMeter = canvas.height / (view.latHeight * 111120);
@@ -698,10 +713,8 @@ function updateVisibleData() {
         currentPreview.y = pt.y;
     }
 
-    overlayUI.updateTimeline(visibleImages);
-
     draw();
-    overlayUI.draw(visibleImages.length);
+    overlayUI.draw();
 }
 
 function draw() {
@@ -807,6 +820,7 @@ let currentWidthMeters = 1000;
 const overlayUI = {
     bins: new Array(100).fill(0),
     maxBinValue: 0,
+    numImages: 0,
     startMs: new Date("2010/01/01 00:00:00").getTime(),
     endMs: new Date("2027/01/01 00:00:00").getTime(),
 
@@ -823,6 +837,7 @@ const overlayUI = {
         // Update histogram based on new set of visible images.
         this.bins.fill(0);
         this.maxBinValue = 0;
+        this.numImages = images.length;
 
         let minTime = Infinity;
         let maxTime = -Infinity;
@@ -833,7 +848,6 @@ const overlayUI = {
             if (img.timeMs < minTime) minTime = img.timeMs;
             if (img.timeMs > maxTime) maxTime = img.timeMs;
         }
-console.log(minTime+","+maxTime)
 
         // Round down to start of min year, round up to start of year AFTER max year
         const sYear = new Date(minTime).getFullYear();
@@ -964,7 +978,7 @@ console.log(minTime+","+maxTime)
 
     },
 
-    drawScaleBar: function(count) {
+    drawScaleBar: function() {
     // draw a legend showing what the current scale is.
         const metersPerDegreeLat = 111132;
         // pixels per degree / meters per degree
@@ -990,7 +1004,7 @@ console.log(minTime+","+maxTime)
         overlayCtx.strokeStyle = "white"; overlayCtx.fillStyle = "white"; overlayCtx.lineWidth = 2; overlayCtx.font = "bold 14px sans-serif";
         overlayCtx.beginPath(); overlayCtx.moveTo(x, y-5); overlayCtx.lineTo(x, y+5); overlayCtx.moveTo(x, y); overlayCtx.lineTo(x+barWidth, y); overlayCtx.moveTo(x+barWidth, y-5); overlayCtx.lineTo(x+barWidth, y+5); overlayCtx.stroke();
         overlayCtx.textAlign = "center"; overlayCtx.fillText(label, x + (barWidth / 2), y - 15);
-        overlayCtx.textAlign = "left"; overlayCtx.font = "13px sans-serif"; overlayCtx.fillText(`in view: ${count.toLocaleString()} images`, x, y + 15);
+        overlayCtx.textAlign = "left"; overlayCtx.font = "13px sans-serif"; overlayCtx.fillText(`in view: ${this.numImages.toLocaleString()} images`, x, y + 15);
 
         // Position the HTML anchor tag dynamically
         const mapLink = document.getElementById('map-link');
@@ -1003,10 +1017,10 @@ console.log(minTime+","+maxTime)
         overlayCtx.restore();
     },
 
-    draw: function(count) {
+    draw: function() {
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         this.drawHistogram();
-        this.drawScaleBar(count);
+        this.drawScaleBar();
     }
 };
 
@@ -1052,7 +1066,6 @@ function updateOverlay(img) {
         window.open(p.substring(0, p.lastIndexOf('/')) + '/index.html', '_blank');
     });
 
-    console.log(selectedImage)
     let dateString = "Unknown";
     if (img.timeMs) {
         const d = new Date(img.timeMs);
@@ -1339,7 +1352,10 @@ hitbox.addEventListener('pointermove', (e) => {
     if (activeTimelineDrag) {
         console.log('DRAGGING:', activeTimelineDrag, '| X:', mouseX);
         overlayUI.setFilterFromX(activeTimelineDrag, mouseX);
+        
+        // Would it be wiser to delay updateVisibleData until drag is complete?
         updateVisibleData();
+
     } else {
         // Dynamic hover cursor styling
         if (Math.abs(mouseX - overlayUI.startX) < 10 || Math.abs(mouseX - overlayUI.endX) < 10) {
