@@ -16,15 +16,15 @@
         }
 
         #timeline-hitbox {
-            position: absolute; bottom: 0; left: 0;
-            width: 400px; height: 70px; /* Covers just the histogram + axis */
+            position: absolute; top: 90px; left: 8px; /* Fixed from the top, aligning with histBottom */
+            width: 384px; height: 20px;
             z-index: 1001; cursor: pointer; pointer-events: auto;
         }
 
         #ui-overlay {
             position: absolute; top: 10px; right: 10px; width: 320px;
             background: rgba(255, 255, 255, 0.95); padding: 12px;
-            border-radius: 8px; display: none;
+            border-radius: 8px; displaynone;
             pointer-events: auto;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #ccc;
             z-index: 1000;
@@ -37,7 +37,7 @@
 <body>
 
 <div id="top-left-overlay">
-    <canvas id="overlayCanvas" width="400" height="130"></canvas>
+    <canvas id="overlayCanvas" width="400" height="150"></canvas>
     <div id="timeline-hitbox"></div>
 </div>
 
@@ -53,7 +53,7 @@
     text-decoration: none; font-family: sans-serif;
     font-size: 14px; border: 1px solid white;
     z-index: 500; display: none;
-">Map</a>
+">Google map</a>
 
 <canvas id="mapCanvas"></canvas>
 
@@ -251,6 +251,7 @@ const chronological = {
     cronoIndexArray: null,
 
     clear() {
+        console.log("Choronological clear")
         this.cronoIndexArray = null;
     },
 
@@ -258,11 +259,10 @@ const chronological = {
         if (visibleImages.length === 0) return null;
 
         if (!this.cronoIndexArray) {
+            console.log("Choronological regen len=", visibleImages.length)
             this.cronoIndexArray = Array.from(visibleImages.keys());
             this.cronoIndexArray.sort((a, b) => {
-                const dateA = visibleImages[a].dateTime;
-                const dateB = visibleImages[b].dateTime;
-                return dateA < dateB ? -1 : (dateA > dateB ? 1 : 0);
+                return visibleImages[a].timeMs - visibleImages[b].timeMs
             });
         }
 
@@ -567,12 +567,9 @@ function updateVisibleData() {
 
     // Next apply temporal filtering.
     let temporalVisible = []
-    for (let i = startIndex; i < endIndex; i++) {
-        const img = images[i];
-        if (img.timeMs) {
-            if (img.timeMs >= overlayUI.filterStartMs && img.timeMs <= overlayUI.filterEndMs) {
-                temporalVisible.push(img)
-            }
+    for (let img of visibleImages) {
+        if (img.timeMs >= overlayUI.filterStartMs && img.timeMs <= overlayUI.filterEndMs) {
+            temporalVisible.push(img)
         }
     }
     console.log(`Temporal filter: ${temporalVisible.length} of ${visibleImages.length}`);
@@ -820,7 +817,7 @@ let currentWidthMeters = 1000;
 const overlayUI = {
     bins: new Array(100).fill(0),
     maxBinValue: 0,
-    numImages: 0,
+    numImagesLatLon: 0,
     startMs: new Date("2010/01/01 00:00:00").getTime(),
     endMs: new Date("2027/01/01 00:00:00").getTime(),
 
@@ -837,7 +834,7 @@ const overlayUI = {
         // Update histogram based on new set of visible images.
         this.bins.fill(0);
         this.maxBinValue = 0;
-        this.numImages = images.length;
+        this.numImagesLatLon = images.length;
 
         let minTime = Infinity;
         let maxTime = -Infinity;
@@ -870,13 +867,9 @@ const overlayUI = {
     },
 
     setFilterFromX: function(dragType, mouseX) {
-        const endYearCap = this.endYear + 1;
-        const endMs = new Date(endYearCap + "/01/01 00:00:00").getTime();
-
         // Convert pixel to time
         //let ratio = mouseX / this.histWidth;
-        let ratio = mouseX / overlayCanvas.width;
-        ratio = Math.max(0, Math.min(1, ratio)); // Clamp to canvas edges
+        let ratio = (mouseX-this.histLeft) / this.histWidth;
         let targetMs = this.startMs + (ratio * this.timeSpan);
 
         // Logic to make the handles sticky at start and end, also minimum gap betwen the handles.
@@ -901,13 +894,12 @@ const overlayUI = {
 
         const histHeight = 50;
         const histBottom = 100;
-        this.histLeft = 10;
         this.histWidth = overlayCanvas.width-20;
         const barWidth = this.histWidth/100;
 
         // X positions of time filter start stop handles
-        this.startX = ((this.filterStartMs - this.startMs) / this.timeSpan) * overlayCanvas.width;
-        this.endX = ((this.filterEndMs - this.startMs) / this.timeSpan) * overlayCanvas.width;
+        this.startX = ((this.filterStartMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
+        this.endX = ((this.filterEndMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
 
         // Make sure handles are visible
         this.startX = Math.min(Math.max(this.startX,this.histLeft), this.histLeft+this.histWidth)
@@ -916,7 +908,7 @@ const overlayUI = {
         // Draw the time histogram bars.
         for (let i = 0; i < 100; i++) {
             if (this.bins[i] > 0) {
-                const barCenter = (i * barWidth) + (barWidth / 2);
+                const barCenter = (i * barWidth) + (barWidth / 2)+this.histLeft
                 if (barCenter >= this.startX && barCenter <= this.endX) { // Is between markers
                     overlayCtx.fillStyle = 'rgba(120, 180, 255, 1)'; // Bright (Selected)
                 } else {
@@ -924,7 +916,7 @@ const overlayUI = {
                 }
 
                 let height = (this.bins[i] / this.maxBinValue) * histHeight;
-                if (height < 1) height = 1; // Make sure the bar at least shows up.
+                if (height < 2) height = 2; // Make sure the bar at least shows up.
                 overlayCtx.fillRect(i * barWidth+this.histLeft, histBottom - 2 - height, barWidth - 0.5, height);
             }
         }
@@ -953,29 +945,68 @@ const overlayUI = {
 
             overlayCtx.beginPath();
             overlayCtx.moveTo(x, histBottom);
-            overlayCtx.lineTo(x, histBottom + 8); // 5 pixel tick
+            overlayCtx.lineTo(x, histBottom + 10); // 5 pixel tick
             overlayCtx.stroke();
             overlayCtx.textAlign = 'center';
 
             const shortYear = (year % 100).toString().padStart(2, '0');
-            overlayCtx.fillText(shortYear, x, histBottom + 10);
+            overlayCtx.fillText(shortYear, x, histBottom + 12);
         }
 
-        // Draw Handles
-        overlayCtx.strokeStyle = 'rgba(255, 180, 255, 1)';
-        overlayCtx.lineWidth = 3;
 
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(this.startX, histBottom -10);
-        overlayCtx.lineTo(this.startX, histBottom + 5);
-        overlayCtx.stroke();
+        // Draw Handles (5x12 "house" shape)
+        const drawHandle = (x) => {
+            overlayCtx.fillStyle = '#00ff00'; // UI Blue
+            overlayCtx.strokeStyle = 'white'; // White outline
+            overlayCtx.lineWidth = 1;
 
-        overlayCtx.beginPath();
-        overlayCtx.moveTo(this.endX, histBottom -10);
-        overlayCtx.lineTo(this.endX, histBottom + 5);
-        overlayCtx.stroke();
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(x, histBottom - 3);        // Roof peak
+            overlayCtx.lineTo(x + 2.5, histBottom);   // Roof right (eaves)
+            overlayCtx.lineTo(x + 2.5, histBottom+9);       // Wall bottom right
+            overlayCtx.lineTo(x - 2.5, histBottom+9);       // Wall bottom left
+            overlayCtx.lineTo(x - 2.5, histBottom);   // Roof left (eaves)
+            overlayCtx.closePath();
+
+            overlayCtx.fill();
+            overlayCtx.stroke();
+        };
+
+        drawHandle(this.startX);
+        drawHandle(this.endX);
 
 
+
+        // --- DRAW SELECTED DATE RANGE TEXT ---
+        const startD = new Date(this.filterStartMs);
+        const endD = new Date(this.filterEndMs);
+
+        // Helper to format "12 Aug 2026"
+        const formatD = (d) => d.getDate() + ' ' + d.toLocaleString('en-US', { month: 'short' }) + ' ' + d.getFullYear();
+
+        // Check against limits of range, which denote no filtering on this end of range
+        const isStartBound = startD.getFullYear() <= 1980;
+        const isEndBound = endD.getFullYear() >= 2100;
+
+        let dateText = "";
+        if (isStartBound && isEndBound) {
+            dateText =  visibleImages.length+" images"
+            dateText += "       move green pointers to filter by date"
+        } else {
+            if (isStartBound) {
+                dateText = formatD(endD) + " or before:"
+            } else if (isEndBound) {
+                dateText = formatD(startD) + " and after:"
+            } else {
+                dateText = formatD(startD) + " -- " + formatD(endD);
+            }
+            dateText += "    "+visibleImages.length+" of "+this.numImagesLatLon +" shown"
+        }
+
+        overlayCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+        overlayCtx.font = 'italic 15px sans-serif';
+        overlayCtx.textAlign = 'left';
+        overlayCtx.fillText(dateText, 0, 130);
     },
 
     drawScaleBar: function() {
@@ -997,20 +1028,21 @@ const overlayUI = {
         const barWidth = bestMeters / metersPerPixel;
         const label = bestMeters >= 1000 ? (bestMeters / 1000) + " km" : bestMeters + " m";
 
-        const x = 20, y = 30;
+        const x = 5, y = 30;
         overlayCtx.save(); overlayCtx.resetTransform();
 
         // Draw Scale Line
         overlayCtx.strokeStyle = "white"; overlayCtx.fillStyle = "white"; overlayCtx.lineWidth = 2; overlayCtx.font = "bold 14px sans-serif";
         overlayCtx.beginPath(); overlayCtx.moveTo(x, y-5); overlayCtx.lineTo(x, y+5); overlayCtx.moveTo(x, y); overlayCtx.lineTo(x+barWidth, y); overlayCtx.moveTo(x+barWidth, y-5); overlayCtx.lineTo(x+barWidth, y+5); overlayCtx.stroke();
         overlayCtx.textAlign = "center"; overlayCtx.fillText(label, x + (barWidth / 2), y - 15);
-        overlayCtx.textAlign = "left"; overlayCtx.font = "13px sans-serif"; overlayCtx.fillText(`in view: ${this.numImages.toLocaleString()} images`, x, y + 15);
+
 
         // Position the HTML anchor tag dynamically
         const mapLink = document.getElementById('map-link');
 
         if (mapLink) {
-            mapLink.style.left = (x + barWidth + 20) + "px";
+            mapLink.style.left = "330px";
+            mapLink.style.top = "25px"
             mapLink.style.display = 'block'; // Show it once calculated
         }
 
@@ -1069,16 +1101,12 @@ function updateOverlay(img) {
     let dateString = "Unknown";
     if (img.timeMs) {
         const d = new Date(img.timeMs);
-        // Rebuild string as YYYY:MM:DD HH:MM:SS
-        dateString = d.getFullYear() + ':' +
-                     (d.getMonth() + 1).toString().padStart(2, '0') + ':' +
-                     d.getDate().toString().padStart(2, '0') + ' ' +
-                     d.getHours().toString().padStart(2, '0') + ':' +
-                     d.getMinutes().toString().padStart(2, '0') + ':' +
-                     d.getSeconds().toString().padStart(2, '0');
+        dateString = d.getDate() + ' ' +
+                     d.toLocaleString('en-US', { month: 'short' }) + ' ' +
+                     d.getFullYear() + ' ' +
+                     d.toTimeString().slice(0, 8);
     }
     infoText.appendChild(document.createTextNode(`\nDate/Time: ${dateString}\n`));
-
 
     addLink(`GPS: ${img.lat.toFixed(6)}, ${img.lon.toFixed(6)}`, () => {
         window.open(`https://www.google.com/maps?q=${img.lat},${img.lon}`, '_blank');
@@ -1352,7 +1380,7 @@ hitbox.addEventListener('pointermove', (e) => {
     if (activeTimelineDrag) {
         console.log('DRAGGING:', activeTimelineDrag, '| X:', mouseX);
         overlayUI.setFilterFromX(activeTimelineDrag, mouseX);
-        
+
         // Would it be wiser to delay updateVisibleData until drag is complete?
         updateVisibleData();
 

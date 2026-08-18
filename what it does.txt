@@ -21,7 +21,16 @@ The map can be panned and zoomed with the mouse or with touch inputs on mobile. 
 Images can be selected with a mouse click, and a small preview of the image is shown in the top right of the window, along with metadata of the image.  The selected image is also shown as a red dot instead of a cyan one.  If the image is part of the cluster, the red dot is dranw on top of the circle represening the culuster.  If the mouse hovers over a different image from the selected image, that image is displayed instead, but when the mouse moves away from that image dot, it reverts to displaying the selected image preview, or no image if none is selected.
 The image in the preview links to the full size image,  the path in the preview image links to an index.html in the directory the image came from, and the GPS line links to google maps to pop up that coordinate
 
-A separate scale bar is displayed on the top left of the image, indicating how large a kilometer meter, or whatever currently is.
+A separate scale bar is displayed on the top left of the image, indicating how large a kilometer, meter, or whatever distance that is a multiple of 1,2 or 5 times a power of 10 that fits in the space.
+
 There is also a button to display the current view on google maps.  in addition, a google maps URL may be dragged onto into the view, which sets the view to the coordinates and zoom level from the google maps URL.
 
-If an image is selected, it is also possible ot flip through images chronologically next and previous using the cursor keys, also home and end for first and last images.
+A time-histogram is displayed below the scale bar showing the distribution over time of the images that fall within the lat-lon coordinates of the current window's coordinates.  The histogram also has two sliders that allow filtering which photos are marked on the map by time.
+
+If an image is selected, it is also possible ot flip through images chronologically next and previous using the cursor left, right, home and end keys.
+
+
+Stuff to fix:
+See how it works on ipad now.
+Show on histogram where current image is.
+Allow selecting a time on the histogram (use Y position as x micro-adjust so more images in time can be picked)
