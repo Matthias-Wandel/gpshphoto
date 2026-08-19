@@ -24,7 +24,6 @@
         #ui-overlay {
             position: absolute; top: 10px; right: 10px; width: 320px;
             background: rgba(255, 255, 255, 0.95); padding: 12px;
-            border-radius: 8px; displaynone;
             pointer-events: auto;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #ccc;
             z-index: 1000;
@@ -815,7 +814,8 @@ let currentWidthMeters = 1000;
 
 
 const overlayUI = {
-    bins: new Array(100).fill(0),
+    numBins: 120,
+    bins: new Array(this.numBins).fill(0),
     maxBinValue: 0,
     numImagesLatLon: 0,
     startMs: new Date("2010/01/01 00:00:00").getTime(),
@@ -825,6 +825,7 @@ const overlayUI = {
     filterEndMs: new Date("2100/01/01 00:00:00").getTime(),
     startX: 0,
     endX: 0,
+    selectedTimeMs: 0, // 0 means no image selected
     histLeft: 10,
     histWidth: 400-20,
     timespan: 31536000000, // Default value 1 year of miliseconds
@@ -857,9 +858,9 @@ const overlayUI = {
 
         // Now bin the data.
         for (let img of images) {
-            let index = Math.floor(((img.timeMs - this.startMs) / this.timeSpan) * 100);
-            if (index === 100) index = 99; // Safety clamp if time lands exactly on endMs
-            if (index >= 0 && index < 100) {
+            let index = Math.floor(((img.timeMs - this.startMs) / this.timeSpan) * this.numBins);
+            if (index >= this.numBins) index = this.numBins-1; // Safety clamp if time lands exactly on endMs
+            if (index >= 0) {
                 this.bins[index]++;
                 if (this.bins[index] > this.maxBinValue) this.maxBinValue = this.bins[index];
             }
@@ -888,6 +889,7 @@ const overlayUI = {
     drawHistogram: function() {
         if (this.maxBinValue === 0) return;
 
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         overlayCtx.fillStyle = 'rgba(60, 180, 255, 1)';
 
         // Bar length leaves 10 pix on either end so legend below still fits.
@@ -895,7 +897,7 @@ const overlayUI = {
         const histHeight = 50;
         const histBottom = 100;
         this.histWidth = overlayCanvas.width-20;
-        const barWidth = this.histWidth/100;
+        const barWidth = this.histWidth/this.numBins;
 
         // X positions of time filter start stop handles
         this.startX = ((this.filterStartMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
@@ -906,7 +908,7 @@ const overlayUI = {
         this.endX = Math.min(Math.max(this.endX,this.histLeft), this.histLeft+this.histWidth)
 
         // Draw the time histogram bars.
-        for (let i = 0; i < 100; i++) {
+        for (let i = 0; i < this.numBins; i++) {
             if (this.bins[i] > 0) {
                 const barCenter = (i * barWidth) + (barWidth / 2)+this.histLeft
                 if (barCenter >= this.startX && barCenter <= this.endX) { // Is between markers
@@ -917,7 +919,7 @@ const overlayUI = {
 
                 let height = (this.bins[i] / this.maxBinValue) * histHeight;
                 if (height < 2) height = 2; // Make sure the bar at least shows up.
-                overlayCtx.fillRect(i * barWidth+this.histLeft, histBottom - 2 - height, barWidth - 0.5, height);
+                overlayCtx.fillRect(i * barWidth + this.histLeft, histBottom - 2 - height, barWidth, height);
             }
         }
 
@@ -1007,7 +1009,28 @@ const overlayUI = {
         overlayCtx.font = 'italic 15px sans-serif';
         overlayCtx.textAlign = 'left';
         overlayCtx.fillText(dateText, 0, 130);
+
+        // Draw a red line on the histogram for the time of the selected image
+        if (this.selectedTimeMs > 0 && this.selectedTimeMs >= this.startMs && this.selectedTimeMs <= this.endMs) {
+            const timeSpan = this.endMs - this.startMs;
+            const lineX = this.histLeft + ((this.selectedTimeMs - this.startMs) / timeSpan) * this.histWidth;
+
+            overlayCtx.strokeStyle = 'rgba(255, 120, 120, 1)'; // Bright red, slightly transparent
+            overlayCtx.lineWidth = 3;
+
+            overlayCtx.beginPath();
+            // Draw from just above the tallest bar down to the axis
+            overlayCtx.moveTo(lineX, histBottom+10);
+            overlayCtx.lineTo(lineX, histBottom-2);
+            overlayCtx.stroke();
+        }
     },
+
+    setSelectedTime: function(ms) {
+        this.selectedTimeMs = ms;
+        this.drawHistogram();
+    },
+
 
     drawScaleBar: function() {
     // draw a legend showing what the current scale is.
@@ -1112,6 +1135,9 @@ function updateOverlay(img) {
         window.open(`https://www.google.com/maps?q=${img.lat},${img.lon}`, '_blank');
     });
     infoText.appendChild(document.createTextNode(`\nCamera: ${img.camera}`));
+
+    // Also update the histogram
+    overlayUI.setSelectedTime(img.timeMs);
 }
 
 
@@ -1159,6 +1185,7 @@ const handleStart = (x, y, isTouch) => {
         view.dragging = true;
         view.dragStart = { x, y };
         uiOverlay.style.display = 'none';
+        overlayUI.setSelectedTime(0); // Hide the red line on the histogram
     }
     draw(); // Redraw to clear the red selection circle
 };
