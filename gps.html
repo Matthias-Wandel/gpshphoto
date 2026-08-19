@@ -251,36 +251,74 @@ const chronological = {
 
     clear() {
         console.log("Choronological clear")
-        this.cronoIndexArray = null;
+        chronological.chronoIndexArray = null;
+    },
+
+    buildIndex: function() {
+        if (chronological.chronoIndexArray) return chronological.chronoIndexArray;
+        // Build an array linking the actual time to the original image index, then sort it
+        console.log("Build chronological index array")
+        chronological.chronoIndexArray = Array.from(visibleImages.keys());
+        chronological.chronoIndexArray.sort((a, b) => {
+            return visibleImages[a].timeMs - visibleImages[b].timeMs
+        });
+        return chronological.chronoIndexArray
     },
 
     getNavIndex(currentIndex, action) {
         if (visibleImages.length === 0) return null;
 
-        if (!this.cronoIndexArray) {
-            console.log("Choronological regen len=", visibleImages.length)
-            this.cronoIndexArray = Array.from(visibleImages.keys());
-            this.cronoIndexArray.sort((a, b) => {
-                return visibleImages[a].timeMs - visibleImages[b].timeMs
-            });
-        }
+        let chronoIndexArray = chronological.buildIndex();
 
         // Absolute navigation works even if currentIndex is -1
-        if (action === "first") return this.cronoIndexArray[0];
-        if (action === "last") return this.cronoIndexArray[this.cronoIndexArray.length - 1];
+        if (action === "first") return cronoIndexArray[0];
+        if (action === "last") return cronoIndexArray[cronoIndexArray.length - 1];
 
         // Relative navigation (Arrows) requires an existing selection
         if (currentIndex === -1) return null;
 
-        const currentPos = this.cronoIndexArray.indexOf(currentIndex);
+        const currentPos = chronoIndexArray.indexOf(currentIndex);
         if (currentPos === -1) return null;
 
         let nextPos = currentPos + action;
         if (nextPos < 0) nextPos = 0;
-        if (nextPos >= this.cronoIndexArray.length) nextPos = this.cronoIndexArray.length - 1;
+        if (nextPos >= chronoIndexArray.length) nextPos = cronoIndexArray.length - 1;
 
-        return this.cronoIndexArray[nextPos];
+        return chronoIndexArray[nextPos];
+    },
+
+    findNearestMsImage: function(timeMs) {
+        let chronoIndexArray = chronological.buildIndex();
+
+        if (chronoIndexArray.length === 0) return null;
+        // Fast boundary checks (if time is outside the bounds, snap to first/last)
+        let lastIdx = chronoIndexArray.length - 1;
+        if (timeMs <= chronoIndexArray[0].timeMs) return visibleImages[chronoIndexArray[0].index];
+        if (timeMs >= chronoIndexArray[lastIdx].timeMs) return visibleImages[chronoIndexArray[lastIdx].index];
+
+        // Standard Binary Search
+        let low = 0;
+        let high = lastIdx;
+
+        while (low <= high-1) {
+            let mid = Math.floor((low + high) / 2);
+            let midMs = visibleImages[chronoIndexArray[mid]].timeMs;
+            if (midMs < timeMs) {
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+
+        // If no exact match, low and high have crossed.
+        // 'high' is the closest smaller value, 'low' is the closest larger value.
+        let diffLow  = Math.abs(visibleImages[chronoIndexArray[low ]].timeMs - timeMs);
+        let diffHigh = Math.abs(visibleImages[chronoIndexArray[high]].timeMs - timeMs);
+        let closestEntry = diffLow < diffHigh ? chronoIndexArray[low] : chronoIndexArray[high];
+
+        return visibleImages[closestEntry];
     }
+
 };
 
 const baseMap_OpenStreetMaps = {
@@ -1029,6 +1067,20 @@ const overlayUI = {
     setSelectedTime: function(ms) {
         this.selectedTimeMs = ms;
         this.drawHistogram();
+        this.drawScaleBar();
+    },
+
+
+    seekImageFromX: function(mouseX) {
+        const timeSpan = this.endMs - this.startMs;
+        // Calculate ratio relative to the histogram's padding
+        let ratio = mouseX / this.histWidth;
+        ratio = Math.max(0, Math.min(1, ratio)); // Clamp safely between 0 and 1
+
+        const targetMs = this.startMs + (ratio * timeSpan);
+
+        console.log("Histogram seek to time:"+(new Date(targetMs)).toLocaleString());
+        return chronological.findNearestMsImage(targetMs);
     },
 
 
@@ -1393,7 +1445,14 @@ hitbox.addEventListener('pointerdown', (e) => {
     } else if (Math.abs(mouseX - overlayUI.endX) < 10) {
         activeTimelineDrag = 'end-handle';
     } else {
-        activeTimelineDrag = 'click-seek';
+        // Click not on handle seeks to image time.
+        activeTimelineDrag = null; // Do not start a drag
+        const nearestImg = overlayUI.seekImageFromX(mouseX);
+        if (nearestImg) {
+            selectedImage = nearestImg
+            updateOverlay(nearestImg);
+            draw();
+        }
     }
 
     console.log('POINTER DOWN:', activeTimelineDrag, '| X:', mouseX);
