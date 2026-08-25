@@ -1,4 +1,4 @@
-The file "gps.html" is a HTML file containing a javascript program for browsing through tousands of images by coordinates.
+The file "gps.html" is a HTML file containing a javascript program for browsing through tousands of GPS-tagged images by coordinates.
 
 The program uses a previously generated "gpstagged.js" for a list of images to display.  Gpstagged.js defines one list as follows, with four lines for each image consisting of a relatove URL path to the image, Date/Time, Decimal Latitude and Longitude, and camera model.  Subsequent entries are separated by a blank line.
 
@@ -12,25 +12,31 @@ Camera: DSC-HX5V
 Date/Time: ....
 '
 
-The program draws a base map using openstreetmap tiles, or locally pre-generated base maps.  It then dots on the map representing where images were taken.  Image close together or with the same coordinates are represented by first brightening the dot, then growing it by cube root for the number of images it represents.  As the dot grows larger, it will encompass images that fall within its radius.
+The program draws a base map using openstreetmap tiles, or locally pre-generated base maps if declared by variable BasemapsDir in included file 'basemaps/basemaps.js'.  After drawing the base maps, it draws   dots on the map representing where images were taken. for some views, more than 10000 images fall within the shown map view.  Image close together or with the same coordinates are represented by first brightening the dot representing both, then growing it by cube root for the number of images it represents.  As the dot grows larger, it will cover a larger area and encompass images that fall within its radius  A subsequent pass is run on the data to see if larger cluster circles should sallow nearby smaller clusters, and if so, merges them.
 
-As many images can fall on the same spot, a small amount of "jitter" is added to latitude and longitude so that when zoomed in closely, inages with the same coordinates are represented by many separte dots.
+As many images can fall on the exact same lat/lon coordinates, a small amount of "jitter" is added to latitude and longitude so that when zoomed in very closely, inages with the same coordinates are represented by an outwards spiraling cluster of dots.
 
-The map can be panned and zoomed with the mouse or with touch inputs on mobile.  For speed, a smaller list of images visible within the current window is calculated and subsequently used for the view.  These images have pixel coordinates, so that lookups and display does not require conversion to and from latitude and longitude.
+The map can be panned and zoomed with the mouse or with touch inputs on mobile.  For speed, a smaller list of images visible within the current window is calculated and clustered.  These images have pixel coordinates, so that lookups and display does not require conversion to and from latitude and longitude.  The visible images list is not recomputed unless the view changes (panning) or time-based filtering changes the visible list.
 
 Images can be selected with a mouse click, and a small preview of the image is shown in the top right of the window, along with metadata of the image.  The selected image is also shown as a red dot instead of a cyan one.  If the image is part of the cluster, the red dot is dranw on top of the circle represening the culuster.  If the mouse hovers over a different image from the selected image, that image is displayed instead, but when the mouse moves away from that image dot, it reverts to displaying the selected image preview, or no image if none is selected.
 The image in the preview links to the full size image,  the path in the preview image links to an index.html in the directory the image came from, and the GPS line links to google maps to pop up that coordinate
 
-A separate scale bar is displayed on the top left of the image, indicating how large a kilometer, meter, or whatever distance that is a multiple of 1,2 or 5 times a power of 10 that fits in the space.
+A separate scale bar is displayed on the top left of the image, indicating how large a kilometer, meter, or whatever distance that is a multiple of 1,2 or 5 times a power of 10 that fits in the lloted space for the bar at the top left of the windowe.
 
 There is also a button to display the current view on google maps.  in addition, a google maps URL may be dragged onto into the view, which sets the view to the coordinates and zoom level from the google maps URL.
 
-A time-histogram is displayed below the scale bar showing the distribution over time of the images that fall within the lat-lon coordinates of the current window's coordinates.  The histogram also has two sliders that allow filtering which photos are marked on the map by time.
+A time-histogram is displayed below the scale bar showing the distribution over time of the images that fall within the lat-lon coordinates of the current window's coordinates.  The time scale of the histogram is automatically adjusted based on the date range of the photos that geographically fall within the view, The start and end of the histogram scale are rounded down and up it always starts and ends with the start/end of a year.
+The histogram also has two sliders that can be draggedwith the mouse.
+As there are two sliders on the same bar, they are not standard HTML widgets.  Mouse for the the sliders are processed separately from those for the main window canvas via a hit-box div overlaying the position of the sliders.  The sliders are not standard HTML sliders as thee are two sliders on the bar and to control the styling.
 
-If an image is selected, it is also possible ot flip through images chronologically next and previous using the cursor left, right, home and end keys.
+The sliders start at each end of the scale bar and if moved, only photos for the times between the sliders will be marked on the main canvas.  If the sliders are at the start or end of the bar, that means no start or end cutoff for the images shown, so both sliders at the ends of the bar (the default) means no time-based filtering is applied.
+Clicking on the histogram between the sliders will select the image nearest to the time that spot on the histogram represents.  If the mouse is held down and moved (a drag) this scrubs through images time-wise, updating the preview and highlighted dot as the mouse is moved.
+A red mark on the histogram also shows the time on the histogram of the currently selected image.
+
+If an image is selected, it is also possible ot flip through images chronologically previous and next using the cursor left, right keys.  The home key also goes to the earliest image within the filtered view and end key goes to the last image.
 
 
-Stuff to fix:
-See how it works on ipad now.
-Show on histogram where current image is.
-Allow selecting a time on the histogram (use Y position as x micro-adjust so more images in time can be picked)
+Stuff to do next:
+Half year, quarter and monthly tick-marks on histogram time scale
+Zoom in on histogram feature
+Know whether _small thumbnails exist
