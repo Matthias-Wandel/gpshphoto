@@ -300,17 +300,17 @@ const chronological = {
         let low = 0;
         let high = lastIdx;
 
-        while (low <= high-1) {
+        while (low < high - 1) {
             let mid = Math.floor((low + high) / 2);
             let midMs = visibleImages[chronoIndexArray[mid]].timeMs;
+
             if (midMs < timeMs) {
-                low = mid + 1;
+                low = mid;  // Do NOT add 1. Keep 'mid' as our safe lower boundary.
             } else {
-                high = mid - 1;
+                high = mid; // Do NOT subtract 1. Keep 'mid' as our safe upper boundary.
             }
         }
 
-        // If no exact match, low and high have crossed.
         // 'high' is the closest smaller value, 'low' is the closest larger value.
         let diffLow  = Math.abs(visibleImages[chronoIndexArray[low ]].timeMs - timeMs);
         let diffHigh = Math.abs(visibleImages[chronoIndexArray[high]].timeMs - timeMs);
@@ -1446,7 +1446,7 @@ hitbox.addEventListener('pointerdown', (e) => {
         activeTimelineDrag = 'end-handle';
     } else {
         // Click not on handle seeks to image time.
-        activeTimelineDrag = null; // Do not start a drag
+        activeTimelineDrag = 'scrubber'; // Scrub through images
         const nearestImg = overlayUI.seekImageFromX(mouseX);
         if (nearestImg) {
             selectedImage = nearestImg
@@ -1463,12 +1463,22 @@ hitbox.addEventListener('pointermove', (e) => {
     const rect = hitbox.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
 
-    if (activeTimelineDrag) {
-        console.log('DRAGGING:', activeTimelineDrag, '| X:', mouseX);
+    if (activeTimelineDrag === 'start-handle' || activeTimelineDrag === 'end-handle') {
         overlayUI.setFilterFromX(activeTimelineDrag, mouseX);
+        overlayUI.redraw(visibleImages.length);
 
-        // Would it be wiser to delay updateVisibleData until drag is complete?
-        updateVisibleData();
+    } else if (activeTimelineDrag === 'scrubber') {
+        const nearestImg = overlayUI.seekImageFromX(mouseX);
+
+        if (nearestImg && nearestImg !== selectedImage) {
+            // Only update and redraw if we actually scrubbed to a DIFFERENT image
+            selectedImage = nearestImg;
+            overlayUI.setSelectedTime(selectedImage.timeMs);
+
+            selectedImage = nearestImg
+            updateOverlay(nearestImg);
+            draw();
+        }
 
     } else {
         // Dynamic hover cursor styling
