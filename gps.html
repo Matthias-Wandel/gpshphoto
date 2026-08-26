@@ -632,7 +632,7 @@ function updateVisibleData() {
             if (count > 1){
                 if (count > 11) { // Sprial for 11+ points
                     let spacing = pixelsPerMeter * 0.03
-                    for (k=0; k < count; k++) {
+                    for (let k=0; k < count; k++) {
                         const groupImg = visibleImages[i + k];
 
                         let rad = Math.sqrt(k + 1.5);
@@ -643,7 +643,7 @@ function updateVisibleData() {
                 }else{ // Evenly space images around a for 2-10 points
                     let radius = pixelsPerMeter * 0.1;
                     if (count >=6) count -= 1; // Don't offset last image so it falls in circle center
-                    for (k=0; k < count; k++) {
+                    for (let k=0; k < count; k++) {
                         const groupImg = visibleImages[i + k];
                         let angle = ((k+0.5) / count) * Math.PI * 2;
                         groupImg.x = screenPos.x + Math.cos(angle) * radius;
@@ -969,8 +969,7 @@ const overlayUI = {
         overlayCtx.lineTo(overlayCanvas.width-10, histBottom);
         overlayCtx.stroke();
 
-
-        // Draw ticks and years
+        // Draw time-scale ticks, years and months
         overlayCtx.strokeStyle = 'rgba(255, 255, 255, 1)';
         overlayCtx.fillStyle = 'rgba(255, 255, 255, 1)';
         overlayCtx.font = '12px sans-serif';
@@ -979,18 +978,57 @@ const overlayUI = {
         const sYear = new Date(this.startMs).getFullYear();
         const eYearCap = new Date(this.endMs).getFullYear(); // endMs is already the start of the next year
 
+        // Array of days into a standard 365-day year for the start of each month
+        const monthStartDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+
+        // Determine pixel width of one year to decide tick density
+        const msPerYear = 365 * 24 * 60 * 60 * 1000;
+        const yearPixels = (msPerYear / this.timeSpan) * this.histWidth;
+
         for (let year = sYear; year <= eYearCap; year++) {
-            const yearMs = new Date(year + "/01/01 00:00:00").getTime();
-            const x = ((yearMs - this.startMs) / this.timeSpan) * (this.histWidth) + this.histLeft;
+            const yearStartMs = new Date(year + "/01/01 00:00:00").getTime();
 
-            overlayCtx.beginPath();
-            overlayCtx.moveTo(x, histBottom);
-            overlayCtx.lineTo(x, histBottom + 10); // 5 pixel tick
-            overlayCtx.stroke();
-            overlayCtx.textAlign = 'center';
+            for (let m = 0; m < 12; m++) {
+                // Determine tick visibility based on year scale
+                if (m !== 0 && m !== 6) { // Always show Jan (0) and Jul (6)
+                    if (m === 3 || m === 9) { // Apr (3) and Oct (9) are quarters
+                        if (yearPixels <= 100) continue;
+                    } else { // All other months
+                        if (yearPixels <= 200) continue;
+                    }
+                }
 
-            const shortYear = (year % 100).toString().padStart(2, '0');
-            overlayCtx.fillText(shortYear, x, histBottom + 12);
+                const tickMs = yearStartMs + (monthStartDays[m] * 24 * 60 * 60 * 1000);
+
+                // Stop drawing if we exceed the timeline bound
+                if (tickMs > this.endMs) break;
+
+                const x = ((tickMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
+
+                // Length of the tick line
+                let tickLen = 6; // shorter tick for regular months
+                if (m === 0 || m === 3 || m === 6 || m === 9) {
+                    tickLen = 10; // annual, semiannual, and quarterly
+                }
+
+                overlayCtx.beginPath();
+                overlayCtx.moveTo(x, histBottom);
+                overlayCtx.lineTo(x, histBottom + tickLen);
+                overlayCtx.stroke();
+
+                // Draw the text labels
+                overlayCtx.textAlign = 'center';
+                if (m === 0) {
+                    // Always draw the year on January
+                    const shortYear = (year % 100).toString().padStart(2, '0');
+                    overlayCtx.fillText(shortYear, x, histBottom + 12);
+                } else if (yearPixels > 200) {
+                    // Label specific months if we are zoomed in enough to see them
+                    if (m === 3) overlayCtx.fillText("Apr", x, histBottom + 12);
+                    else if (m === 6) overlayCtx.fillText("Jul", x, histBottom + 12);
+                    else if (m === 9) overlayCtx.fillText("Oct", x, histBottom + 12);
+                }
+            }
         }
 
 
@@ -1465,8 +1503,7 @@ hitbox.addEventListener('pointermove', (e) => {
 
     if (activeTimelineDrag === 'start-handle' || activeTimelineDrag === 'end-handle') {
         overlayUI.setFilterFromX(activeTimelineDrag, mouseX);
-        overlayUI.redraw(visibleImages.length);
-
+        updateVisibleData();
     } else if (activeTimelineDrag === 'scrubber') {
         const nearestImg = overlayUI.seekImageFromX(mouseX);
 
@@ -1474,8 +1511,6 @@ hitbox.addEventListener('pointermove', (e) => {
             // Only update and redraw if we actually scrubbed to a DIFFERENT image
             selectedImage = nearestImg;
             overlayUI.setSelectedTime(selectedImage.timeMs);
-
-            selectedImage = nearestImg
             updateOverlay(nearestImg);
             draw();
         }
