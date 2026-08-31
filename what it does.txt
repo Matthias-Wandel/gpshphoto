@@ -40,13 +40,10 @@ There is also the feature to zoom in on a part of the time scale between the sta
 Stuff to do next:
 
 
-Moving either handle to end undoes zoom on that side (presently only undoes zoom if both are at ends)
-Need some sort of zoom button
+Need some sort of histogram time zoom button
 
 If zoomed to less than a year, draw all months names
 If zoomed to less than a month, draw day ticks and every 5'th day label.
-
-Integrate API key for image tiles
 
 Use vector based tiles?
 

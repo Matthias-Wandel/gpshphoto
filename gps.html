@@ -972,7 +972,7 @@ const overlayUI = {
         this.markersMovedSinceZoom = true;
         let ratio = (mouseX - this.histLeft) / this.histWidth;
         let targetMs = this.startMs + (ratio * this.timeSpan);
-        const minGap = 864000000;
+        const minGap = this.timeSpan * 0.03; // Min space between markers
 
         const boundStart = new Date("1980/01/01 00:00:00").getTime();
         const boundEnd = new Date("2100/01/01 00:00:00").getTime();
@@ -989,13 +989,15 @@ const overlayUI = {
             this.filterEndMs = targetMS;
         }
 
-        // Both markers at edges naturally undoes the zoom lock
-        if (this.filterStartMs <= boundStart && this.filterEndMs >= boundEnd) {
+        // Iunlock the zoom scale start or end to 'auto' if marker are moved to the end of the scale.
+        if (this.filterStartMs <= boundStart) {
             this.lockedStartMs = null;
+        }
+
+        if (this.filterEndMs >= boundEnd) {
             this.lockedEndMs = null;
         }
     },
-
     drawHistogram: function() {
         if (this.maxBinValue === 0) return;
 
@@ -1523,8 +1525,7 @@ window.addEventListener('keydown', (e) => {
 
     if (e.key === 'z' || e.key === 'Z') {
         if (overlayUI.zoomToggle()) {
-            overlayUI.updateTimeline(visibleImages);
-            overlayUI.draw();
+            updateVisibleData();
         }
     }
 
