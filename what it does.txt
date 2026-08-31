@@ -26,7 +26,7 @@ A separate scale bar is displayed on the top left of the image, indicating how l
 There is also a button to display the current view on google maps.  in addition, a google maps URL may be dragged onto into the view, which sets the view to the coordinates and zoom level from the google maps URL.
 
 A time-histogram is displayed below the scale bar showing the distribution over time of the images that fall within the lat-lon coordinates of the current window's coordinates.  The time scale of the histogram is automatically adjusted based on the date range of the photos that geographically fall within the view, The start and end of the histogram scale are rounded down and up it always starts and ends with the start/end of a year.
-The histogram also has two sliders that can be draggedwith the mouse.
+The histogram also has two sliders that can be dragged with the mouse.
 As there are two sliders on the same bar, they are not standard HTML widgets.  Mouse for the the sliders are processed separately from those for the main window canvas via a hit-box div overlaying the position of the sliders.  The sliders are not standard HTML sliders as thee are two sliders on the bar and to control the styling.
 
 The sliders start at each end of the scale bar and if moved, only photos for the times between the sliders will be marked on the main canvas.  If the sliders are at the start or end of the bar, that means no start or end cutoff for the images shown, so both sliders at the ends of the bar (the default) means no time-based filtering is applied.
@@ -35,8 +35,19 @@ A red mark on the histogram also shows the time on the histogram of the currentl
 
 If an image is selected, it is also possible ot flip through images chronologically previous and next using the cursor left, right keys.  The home key also goes to the earliest image within the filtered view and end key goes to the last image.
 
+There is also the feature to zoom in on a part of the time scale between the start and end filter marker using the Z key.  Placing either ofthe markers at the end of the scale indicates to place the marker at the end of the fully zoomed out scale for all visible images, as the marker at the end of the scale also indicates show all to start or end for left and markers respectively.
 
 Stuff to do next:
-Half year, quarter and monthly tick-marks on histogram time scale
-Zoom in on histogram feature
+
+
+Moving either handle to end undoes zoom on that side (presently only undoes zoom if both are at ends)
+Need some sort of zoom button
+
+If zoomed to less than a year, draw all months names
+If zoomed to less than a month, draw day ticks and every 5'th day label.
+
+Integrate API key for image tiles
+
+Use vector based tiles?
+
 Know whether _small thumbnails exist
