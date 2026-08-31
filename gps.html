@@ -5,7 +5,6 @@
     <title>GPS Image Mapper</title>
     <script src="gpstagged.js"></script>
     <script src="basemaps/basemaps.js"></script>
-    <!--<script src="basemapcode.js"></script>-->
     <style>
         body { margin: 0; overflow: hidden; background: #000; font-family: 'Segoe UI', sans-serif; touch-action: none; }
         canvas { display: block; cursor: default; }
@@ -374,6 +373,12 @@ const baseMap_OpenStreetMaps = {
             haveFilter = true;
         }
 
+        // API key for base maps from carto.com.
+        // If you plan on using this a lot or re-publish a modified version,
+        // please get your own free API key at https://carto.com/basemaps/apikey/
+        let apiKey = "?key=cb1_28qx_1_a0c46e683e2c956617413463"
+        let baseURL = "https://basemaps.cartocdn.com/rastertiles/"
+
         for (let x = minTileX; x <= maxTileX; x++) {
             for (let y = minTileY; y <= maxTileY; y++) {
                 const tileKey = `${zoom},${x},${y}`;
@@ -384,10 +389,10 @@ const baseMap_OpenStreetMaps = {
                     img.crossOrigin = "Anonymous";
                     if (haveFilter){
                         // Use regular base map, but darkened via ctx.filter
-                        img.src = `https://basemaps.cartocdn.com/rastertiles/voyager/${zoom}/${x}/${y}.png`;
+                        img.src = baseURL + `voyager/${zoom}/${x}/${y}.png`+apiKey;
                     }else{
-                        // Use the overly dark basemap tiles when fiter unavailable
-                        img.src = `https://basemaps.cartocdn.com/rastertiles/dark_all/${zoom}/${x}/${y}.png`;
+                        // Use the overly dark basemap tiles when image fiter unavailable
+                        img.src = baseURL + `dark_all/${zoom}/${x}/${y}.png`+apiKey;
                     }
 
                     img.addEventListener('load', () => { draw(); }, { once: true });
