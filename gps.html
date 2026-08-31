@@ -247,7 +247,7 @@ function updateLatScale(newLatHeight){
 
 const chronological = {
 // Object for cronologically slecting previous and next image in visbleImages using cursor keys
-    cronoIndexArray: null,
+    chronoIndexArray: null,
 
     clear() {
         console.log("Choronological clear")
@@ -257,7 +257,7 @@ const chronological = {
     buildIndex: function() {
         if (chronological.chronoIndexArray) return chronological.chronoIndexArray;
         // Build an array linking the actual time to the original image index, then sort it
-        console.log("Build chronological index array")
+        console.log("(Re)build chronological index array")
         chronological.chronoIndexArray = Array.from(visibleImages.keys());
         chronological.chronoIndexArray.sort((a, b) => {
             return visibleImages[a].timeMs - visibleImages[b].timeMs
@@ -271,18 +271,24 @@ const chronological = {
         let chronoIndexArray = chronological.buildIndex();
 
         // Absolute navigation works even if currentIndex is -1
-        if (action === "first") return cronoIndexArray[0];
-        if (action === "last") return cronoIndexArray[cronoIndexArray.length - 1];
+        if (action === "first") return chronoIndexArray[0];
+        if (action === "last") return chronoIndexArray[chronoIndexArray.length - 1];
 
-        // Relative navigation (Arrows) requires an existing selection
-        if (currentIndex === -1) return null;
+        if (currentIndex === -1){
+            // if current image falls outside time filtered range, pick first or last instead.
+            if (action < 0){
+                return chronoIndexArray[0];
+            }else{
+                return chronoIndexArray.at(-1) // Grab last element
+            }
+        }
 
         const currentPos = chronoIndexArray.indexOf(currentIndex);
-        if (currentPos === -1) return null;
+        if (currentPos === -1) return chronoIndexArray[0]; // Lookup failed, just return soething.
 
         let nextPos = currentPos + action;
         if (nextPos < 0) nextPos = 0;
-        if (nextPos >= chronoIndexArray.length) nextPos = cronoIndexArray.length - 1;
+        if (nextPos >= chronoIndexArray.length) nextPos = chronoIndexArray.length - 1;
 
         return chronoIndexArray[nextPos];
     },
@@ -291,16 +297,12 @@ const chronological = {
         let chronoIndexArray = chronological.buildIndex();
 
         if (chronoIndexArray.length === 0) return null;
-        // Fast boundary checks (if time is outside the bounds, snap to first/last)
-        let lastIdx = chronoIndexArray.length - 1;
-        if (timeMs <= chronoIndexArray[0].timeMs) return visibleImages[chronoIndexArray[0].index];
-        if (timeMs >= chronoIndexArray[lastIdx].timeMs) return visibleImages[chronoIndexArray[lastIdx].index];
 
-        // Standard Binary Search
+        // Binary search to find next highest and next lowest (as exact match is unlikely)
         let low = 0;
-        let high = lastIdx;
+        let high = chronoIndexArray.length - 1;
 
-        while (low < high - 1) {
+        while (low < high - 1) { // loop runs until low and high are 1 index apart
             let mid = Math.floor((low + high) / 2);
             let midMs = visibleImages[chronoIndexArray[mid]].timeMs;
 
@@ -1117,7 +1119,7 @@ const overlayUI = {
 
         const targetMs = this.startMs + (ratio * timeSpan);
 
-        console.log("Histogram seek to time:"+(new Date(targetMs)).toLocaleString());
+        //console.log("Histogram seek to time:"+(new Date(targetMs)).toLocaleString());
         return chronological.findNearestMsImage(targetMs);
     },
 
@@ -1494,6 +1496,7 @@ hitbox.addEventListener('pointerdown', (e) => {
     }
 
     console.log('POINTER DOWN:', activeTimelineDrag, '| X:', mouseX);
+    hitbox.setPointerCapture(e.pointerId);
     e.preventDefault();
 });
 
