@@ -25,8 +25,23 @@
             background: rgba(255, 255, 255, 0.95); padding: 12px;
             pointer-events: auto;
             box-shadow: 0 4px 15px rgba(0,0,0,0.5); border: 1px solid #ccc;
-            z-index: 1000;
+            z-index: 1000; display:none;
         }
+
+        #zoom-btn {
+            position: absolute;
+            top: 40px;
+            left: 5px;
+            background: #00a000; color: white;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: sans-serif; font-size: 13px;
+            border: 1px solid white;
+            z-index: 1002; cursor: pointer;
+            pointer-events: auto; /* Required to intercept clicks */
+            display: none; /* Hidden by default */
+        }
+
         #preview-img { width: 320px; height: 240px; object-fit: contain; background: #111; border-radius: 4px; cursor: pointer; }
         #info-text { margin-top: 10px; font-size: 13px; color: #111; line-height: 1.5; white-space: pre-wrap; }
         .link-text { cursor: pointer; color: #0056b3; text-decoration: underline; padding: 2px 0; display: inline-block; }
@@ -35,6 +50,7 @@
 <body>
 
 <div id="top-left-overlay">
+    <button id="zoom-btn">time zoom in</button>
     <canvas id="overlayCanvas" width="400" height="150"></canvas>
     <div id="timeline-hitbox"></div>
 </div>
@@ -859,7 +875,7 @@ let currentWidthMeters = 1000;
 
 
 const overlayUI = {
-    numBins: 120,
+    numBins: 128,
     bins: new Array(this.numBins).fill(0),
     maxBinValue: 0,
     numAllImagesLatLon: 0,  // Number of images with GPS coordinages (pre-filtering)
@@ -965,6 +981,32 @@ const overlayUI = {
         this.markersMovedSinceZoom = false;
 
         return true;
+    },
+
+    updateZoomButton: function() {
+        const zoomBtn = document.getElementById('zoom-btn');
+        if (!zoomBtn) return;
+
+        const boundStart = new Date("1980/01/01 00:00:00").getTime();
+        const boundEnd = new Date("2100/01/01 00:00:00").getTime();
+
+        // Check if temporal filtering is currently active
+        const isFiltered = this.filterStartMs > boundStart || this.filterEndMs < boundEnd;
+
+        if (!isFiltered) {
+            zoomBtn.style.display = 'none';
+            return;
+        }
+
+        // Unhide the button since sliders are moved inward
+        zoomBtn.style.display = 'block';
+
+        // Determine state based on your existing zoom lock variables
+        if (this.lockedStartMs !== null && !this.markersMovedSinceZoom) {
+            zoomBtn.textContent = "time zoom out";
+        } else {
+            zoomBtn.textContent = "time zoom in";
+        }
     },
 
     setFilterFromX: function(dragType, mouseX) {
@@ -1243,6 +1285,7 @@ const overlayUI = {
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         this.drawHistogram();
         this.drawScaleBar();
+        this.updateZoomButton();
     }
 };
 
@@ -1552,7 +1595,6 @@ function handleWindowResize()
 
 
 
-// --- Timeline Hitbox Event Logging ---
 const hitbox = document.getElementById('timeline-hitbox');
 let activeTimelineDrag = null;
 
@@ -1613,6 +1655,16 @@ window.addEventListener('pointerup', () => {
     if (activeTimelineDrag) {
         console.log('POINTER UP:', activeTimelineDrag);
         activeTimelineDrag = null;
+    }
+});
+
+// Attach the click action to the new button
+document.getElementById('zoom-btn').addEventListener('click', (e) => {
+    e.stopPropagation(); // Prevents the click from bleeding through to the map
+
+    // Uses the exact same logic as your 'z' keypress
+    if (overlayUI.zoomToggle()) {
+        updateVisibleData();
     }
 });
 
