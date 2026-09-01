@@ -115,35 +115,33 @@ function saveView() {
     // Base Google Maps location string
     const locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${heightInMeters}m`;
 
-    // Custom string for our browser URL that will include timeline states
-    let customUrlValue = locValue;
-
     // --- Process 't' (Time Histogram Zoom) ---
     // Check if the scale is locked (not null or undefined)
     const thStart = overlayUI.lockedStartMs != null;
     const thEnd = overlayUI.lockedEndMs != null;
+    let timeUrlPart = ""
 
     if (thStart || thEnd) {
-        customUrlValue += `,t:`;
-        if (thStart) customUrlValue += Math.floor(overlayUI.lockedStartMs / 1000000);
-        customUrlValue += `-`;
-        if (thEnd) customUrlValue += Math.floor(overlayUI.lockedEndMs / 1000000);
+        timeUrlPart += `,t:`;
+        if (thStart) timeUrlPart += Math.floor(overlayUI.lockedStartMs / 1000000);
+        timeUrlPart += `-`;
+        if (thEnd) timeUrlPart += Math.floor(overlayUI.lockedEndMs / 1000000);
     }
 
     // --- Process 'f' (Time Filter Markers) ---
     // Safely check if markers are moved inward from the unbounded 1980/2100 defaults (or Infinity)
-    const tfStart = overlayUI.filterStartMs > new Date("1980/12/31").getTime();
-    const tfEnd = overlayUI.filterEndMs < new Date("2099/01/01").getTime();
+    const tfStart = overlayUI.filterStartMs > startOfTimeMs
+    const tfEnd = overlayUI.filterEndMs     < endOfTimeMs
 
     if (tfStart || tfEnd) {
-        customUrlValue += `,f:`;
-        if (tfStart) customUrlValue += Math.floor(overlayUI.filterStartMs / 1000000);
-        customUrlValue += `-`;
-        if (tfEnd) customUrlValue += Math.floor(overlayUI.filterEndMs / 1000000);
+        timeUrlPart += `,f:`;
+        if (tfStart) timeUrlPart += Math.floor(overlayUI.filterStartMs / 1000000);
+        timeUrlPart += `-`;
+        if (tfEnd) timeUrlPart += Math.floor(overlayUI.filterEndMs / 1000000);
     }
 
     // Update the browser URL without reloading the page
-    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?" + customUrlValue;
+    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?" + locValue + timeUrlPart;
     history.replaceState(null, '', newUrl);
 
     // Update the physical <a> tag (Feed it ONLY the base locValue, as Google Maps will break on our custom parameters)
@@ -870,6 +868,9 @@ function findNearestImage(x, y, threshold) {
 let mapButtonRect = { x: 0, y: 0, w: 0, h: 0 };
 let currentWidthMeters = 1000;
 
+// Define bounds of time -- practically "infininitely past or future"
+const startOfTimeMs = new Date("1980/01/01 00:00:00").getTime();
+const endOfTimeMs = new Date("2100/01/01  00:00:00").getTime();
 
 const overlayUI = {
     numBins: 128,
@@ -884,8 +885,8 @@ const overlayUI = {
     startMs: new Date("2010/01/01 00:00:00").getTime(),
     endMs: new Date("2027/01/01 00:00:00").getTime(),
 
-    filterStartMs: new Date("1980/01/01 00:00:00").getTime(),
-    filterEndMs: new Date("2100/01/01 00:00:00").getTime(),
+    filterStartMs: startOfTimeMs,
+    filterEndMs: endOfTimeMs,
     startX: 0,
     endX: 0,
     selectedTimeMs: 0, // 0 when no image is selected
@@ -938,9 +939,6 @@ const overlayUI = {
 
 
     zoomToggle: function() {
-        const boundStart = new Date("1980/01/01 00:00:00").getTime();
-        const boundEnd = new Date("2100/01/01 00:00:00").getTime();
-
         if (this.lockedStartMs !== null && !this.markersMovedSinceZoom) {
             // Revert to automatic
             this.lockedStartMs = null;
@@ -951,8 +949,8 @@ const overlayUI = {
         let leftTarget = this.filterStartMs;
         let rightTarget = this.filterEndMs;
 
-        let isUnboundedLeft = (leftTarget <= boundStart);
-        let isUnboundedRight = (rightTarget >= boundEnd);
+        let isUnboundedLeft = (leftTarget <= startOfTimeMs);
+        let isUnboundedRight = (rightTarget >= endOfTimeMs);
 
         if (isUnboundedLeft || isUnboundedRight) {
             const actualSpan = this.actualMaxMs - this.actualMinMs;
@@ -984,11 +982,8 @@ const overlayUI = {
         const zoomBtn = document.getElementById('zoom-btn');
         if (!zoomBtn) return;
 
-        const boundStart = new Date("1980/01/01 00:00:00").getTime();
-        const boundEnd = new Date("2100/01/01 00:00:00").getTime();
-
         // Check if temporal filtering is currently active
-        const isFiltered = this.filterStartMs > boundStart || this.filterEndMs < boundEnd;
+        const isFiltered = this.filterStartMs > startOfTimeMs || this.filterEndMs < endOfTimeMs;
 
         if (!isFiltered) {
             zoomBtn.style.display = 'none';
@@ -1013,27 +1008,24 @@ const overlayUI = {
         let targetMs = this.startMs + (ratio * this.timeSpan);
         const minGap = this.timeSpan * 0.03; // Min space between markers
 
-        const boundStart = new Date("1980/01/01 00:00:00").getTime();
-        const boundEnd = new Date("2100/01/01 00:00:00").getTime();
-
         if (dragType === 'start-handle') {
             let targetMS = Math.min(targetMs, this.filterEndMs - minGap);
             // Snap left edge
-            if (targetMS <= this.startMs + (this.timeSpan * 0.02)) targetMS = boundStart;
+            if (targetMS <= this.startMs + (this.timeSpan * 0.02)) targetMS = startOfTimeMs;
             this.filterStartMs = targetMS;
         } else if (dragType === 'end-handle') {
             let targetMS = Math.max(targetMs, this.filterStartMs + minGap);
             // Snap right edge
-            if (targetMS >= this.endMs - (this.timeSpan * 0.02)) targetMS = boundEnd;
+            if (targetMS >= this.endMs - (this.timeSpan * 0.02)) targetMS = endOfTimeMs;
             this.filterEndMs = targetMS;
         }
 
         // Iunlock the zoom scale start or end to 'auto' if marker are moved to the end of the scale.
-        if (this.filterStartMs <= boundStart) {
+        if (this.filterStartMs <= startOfTimeMs) {
             this.lockedStartMs = null;
         }
 
-        if (this.filterEndMs >= boundEnd) {
+        if (this.filterEndMs >= endOfTimeMs) {
             this.lockedEndMs = null;
         }
     },
