@@ -88,38 +88,9 @@ let selectedImage = null;
 let currentPreview = null;
 
 
-function getInitialView() {
-
-    let lat = 45.624897, lon = -75.239783, latHeight = 7; // Fallback location.
-
-    const searchString = window.location.search;
-    const match = searchString.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
-
-    if (match) {
-        lat = parseFloat(match[1]);
-        lon = parseFloat(match[2]);
-        const val = parseFloat(match[3]);
-        const unit = match[4];
-
-        if (unit === 'z') {
-            // Google zoom 0 = 180 degrees of latitude height
-            latHeight = 180 / Math.pow(2, val);
-        } else {
-            // Unit 'm' is vertical meters. 1 degree lat is ~111,120 meters.
-            latHeight = (val || 100000) / 111120;
-        }
-    } else {
-        const saved = JSON.parse(localStorage.getItem('mapView'));
-
-        if (saved && saved.lat) {
-            lat = saved.lat; lon = saved.lon; latHeight = saved.latHeight;
-        }
-    }
-    return { lat, lon, latHeight };
-}
 
 let view = {
-    ...getInitialView(),
+    lat: 45.624897, lon: -75.239783, latHeight: 7, // Fallback location
     dragging: false,
     dragStart: { x: 0, y: 0 },
     dragOffset: { x: 0, y: 0 },
@@ -131,7 +102,6 @@ let view = {
 
 updateLatScale(view.latHeight)
 
-
 function saveView() {
     // Scale is simple: total vertical meters
     const heightInMeters = Math.round(view.latHeight * 111120);
@@ -142,12 +112,41 @@ function saveView() {
         latHeight: view.latHeight
     }));
 
-    // Update the 'MAP' URL
-    let locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${heightInMeters}m`;
-    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname +"?"+ locValue;
+    // Base Google Maps location string
+    const locValue = `@${view.lat.toFixed(6)},${view.lon.toFixed(6)},${heightInMeters}m`;
+
+    // Custom string for our browser URL that will include timeline states
+    let customUrlValue = locValue;
+
+    // --- Process 't' (Time Histogram Zoom) ---
+    // Check if the scale is locked (not null or undefined)
+    const thStart = overlayUI.lockedStartMs != null;
+    const thEnd = overlayUI.lockedEndMs != null;
+
+    if (thStart || thEnd) {
+        customUrlValue += `,t:`;
+        if (thStart) customUrlValue += Math.floor(overlayUI.lockedStartMs / 1000000);
+        customUrlValue += `-`;
+        if (thEnd) customUrlValue += Math.floor(overlayUI.lockedEndMs / 1000000);
+    }
+
+    // --- Process 'f' (Time Filter Markers) ---
+    // Safely check if markers are moved inward from the unbounded 1980/2100 defaults (or Infinity)
+    const tfStart = overlayUI.filterStartMs > new Date("1980/12/31").getTime();
+    const tfEnd = overlayUI.filterEndMs < new Date("2099/01/01").getTime();
+
+    if (tfStart || tfEnd) {
+        customUrlValue += `,f:`;
+        if (tfStart) customUrlValue += Math.floor(overlayUI.filterStartMs / 1000000);
+        customUrlValue += `-`;
+        if (tfEnd) customUrlValue += Math.floor(overlayUI.filterEndMs / 1000000);
+    }
+
+    // Update the browser URL without reloading the page
+    const newUrl = window.location.protocol + "//" + window.location.host + window.location.pathname + "?" + customUrlValue;
     history.replaceState(null, '', newUrl);
 
-    // Update the physical <a> tag
+    // Update the physical <a> tag (Feed it ONLY the base locValue, as Google Maps will break on our custom parameters)
     const mapLink = document.getElementById('map-link');
     if (mapLink) {
         mapLink.href = `https://www.google.com/maps/${locValue}`;
@@ -632,9 +631,7 @@ function updateVisibleData() {
             temporalVisible.push(img)
         }
     }
-    console.log(`Temporal filter: ${temporalVisible.length} of ${visibleImages.length}`);
     visibleImages = temporalVisible
-
 
     const latRad = view.lat * Math.PI / 180;
     const pixelsPerMeter = canvas.height / (view.latHeight * 111120);
@@ -1658,11 +1655,10 @@ window.addEventListener('pointerup', () => {
     }
 });
 
-// Attach the click action to the new button
 document.getElementById('zoom-btn').addEventListener('click', (e) => {
     e.stopPropagation(); // Prevents the click from bleeding through to the map
 
-    // Uses the exact same logic as your 'z' keypress
+    // Button does the same thing as 'z' keypress
     if (overlayUI.zoomToggle()) {
         updateVisibleData();
     }
@@ -1671,6 +1667,43 @@ document.getElementById('zoom-btn').addEventListener('click', (e) => {
 
 window.addEventListener('resize', handleWindowResize)
 
+function parseUrlParameters() {
+    const search = window.location.search;
+
+    // Get URL lat/lon/scale
+    const geoMatch = search.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
+    if (geoMatch) {
+        view.lat = parseFloat(geoMatch[1]);
+        view.lon = parseFloat(geoMatch[2]);
+        const val = parseFloat(geoMatch[3]);
+        const unit = geoMatch[4];
+
+        if (unit === 'z') {
+            view.latHeight = 180 / Math.pow(2, val);
+        } else {
+            view.latHeight = (val || 100000) / 111120;
+        }
+    }
+
+    // Parse timeline UI Parameters (t: and f:)
+    const tMatch = search.match(/,t:(-?\d*)-(-?\d*)/);
+    if (tMatch) {
+console.log("matched time scale")
+        if (tMatch[1]) overlayUI.lockedStartMs = parseInt(tMatch[1], 10) * 1000000;
+        if (tMatch[2]) overlayUI.lockedEndMs = parseInt(tMatch[2], 10) * 1000000;
+    }
+
+    const fMatch = search.match(/,f:(-?\d*)-(-?\d*)/);
+    if (fMatch) {
+console.log("matched time filter")
+        if (fMatch[1]) overlayUI.filterStartMs = parseInt(fMatch[1], 10) * 1000000;
+        if (fMatch[2]) overlayUI.filterEndMs = parseInt(fMatch[2], 10) * 1000000;
+    }
+
+    updateLatScale(view.latHeight);
+}
+
+parseUrlParameters();
 initData();
 handleWindowResize(); // Get initial size.
 </script>
