@@ -1055,9 +1055,9 @@ const overlayUI = {
             if (this.bins[i] > 0) {
                 const barCenter = (i * barWidth) + (barWidth / 2)+this.histLeft
                 if (barCenter >= this.startX && barCenter <= this.endX) { // Is between markers
-                    overlayCtx.fillStyle = 'rgba(120, 180, 255, 1)'; // Bright (Selected)
+                    overlayCtx.fillStyle = 'rgba(180, 180, 255, 1)'; // Bright (Selected)
                 } else {
-                    overlayCtx.fillStyle = 'rgba(120, 180, 255, 0.5)'; // Dim (Unselected)
+                    overlayCtx.fillStyle = 'rgba(180, 180, 255, 0.6)'; // Dim (Unselected)
                 }
 
                 let height = (this.bins[i] / this.maxBinValue) * histHeight;
@@ -1505,16 +1505,26 @@ canvas.addEventListener('touchend', e => {
     }
 }, { passive: false });
 
+canvas.addEventListener('pointerdown', e => {
+    // Ignore touch because custom multi-touch logic handles it already
+    if (e.pointerType !== 'mouse') return;
 
-canvas.addEventListener('mousedown', e => handleStart(e.clientX, e.clientY, false));
-uiOverlay.addEventListener('mousedown', e => e.stopPropagation());
+    canvas.setPointerCapture(e.pointerId);
+    handleStart(e.clientX, e.clientY, false);
+});
 
-window.addEventListener('mousemove', e => handleMove(e.clientX, e.clientY, false));
+canvas.addEventListener('pointermove', e => {
+    if (e.pointerType !== 'mouse') return;
+    handleMove(e.clientX, e.clientY, false);
+});
 
-window.addEventListener('mouseup', () => {
-// end of mouse drag pan.
+canvas.addEventListener('pointerup', e => {
+    if (e.pointerType !== 'mouse') return;
+
+    canvas.releasePointerCapture(e.pointerId);
     if (view.dragging) finalizePanZoomInteraction();
 });
+
 
 
 canvas.addEventListener('wheel', e => {
@@ -1680,14 +1690,12 @@ function parseUrlParameters() {
     // Parse timeline UI Parameters (t: and f:)
     const tMatch = search.match(/,t:(-?\d*)-(-?\d*)/);
     if (tMatch) {
-console.log("matched time scale")
         if (tMatch[1]) overlayUI.lockedStartMs = parseInt(tMatch[1], 10) * 1000000;
         if (tMatch[2]) overlayUI.lockedEndMs = parseInt(tMatch[2], 10) * 1000000;
     }
 
     const fMatch = search.match(/,f:(-?\d*)-(-?\d*)/);
     if (fMatch) {
-console.log("matched time filter")
         if (fMatch[1]) overlayUI.filterStartMs = parseInt(fMatch[1], 10) * 1000000;
         if (fMatch[2]) overlayUI.filterEndMs = parseInt(fMatch[2], 10) * 1000000;
     }

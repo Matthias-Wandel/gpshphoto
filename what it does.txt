@@ -39,10 +39,13 @@ There is also the feature to zoom in on a part of the time scale between the sta
 
 Stuff to do next:
 
+Preview window -- hide on drag (as now), un-hide it IF selected image is still within view.
+Also, if selected image becomes time-filtered out, hide preview window.
+Just write a function that checks if selection is visible, if not, hide it, if yes, show it.
+
+Bug -- if hovering over dot just above bar graph, it stays selected (do we lose the mouse hover off?)
 
 If zoomed to less than a year, draw all months names
 If zoomed to less than a month, draw day ticks and every 5'th day label.
-
-Use vector based tiles?
 
 Know whether _small thumbnails exist
