@@ -864,10 +864,6 @@ function findNearestImage(x, y, threshold) {
     return nearest;
 }
 
-// Global to store the map button bounds and current view width
-let mapButtonRect = { x: 0, y: 0, w: 0, h: 0 };
-let currentWidthMeters = 1000;
-
 // Define bounds of time -- practically "infininitely past or future"
 const startOfTimeMs = new Date("1980/01/01 00:00:00").getTime();
 const endOfTimeMs = new Date("2100/01/01  00:00:00").getTime();
@@ -879,7 +875,7 @@ const overlayUI = {
     numAllImagesLatLon: 0,  // Number of images with GPS coordinages (pre-filtering)
     lockedStartMs: null,    // Zoomed in histogram start and end times, null for auto.
     lockedEndMs: null,
-    markersMovedSinceZoom: false, // Determines what 'z' does.
+    markersMovedSinceZoom: false, // Determines if 'z' or zoom button zooms in or out
     actualMinMs: 0,
     actualMaxMs: 0,
     startMs: new Date("2010/01/01 00:00:00").getTime(),
@@ -1006,7 +1002,7 @@ const overlayUI = {
         this.markersMovedSinceZoom = true;
         let ratio = (mouseX - this.histLeft) / this.histWidth;
         let targetMs = this.startMs + (ratio * this.timeSpan);
-        const minGap = this.timeSpan * 0.03; // Min space between markers
+        const minGap = this.timeSpan * 0.03; //minimum Min space between markers
 
         if (dragType === 'start-handle') {
             let targetMS = Math.min(targetMs, this.filterEndMs - minGap);
@@ -1029,6 +1025,118 @@ const overlayUI = {
             this.lockedEndMs = null;
         }
     },
+
+    drawTimeScale: function(histBottom) {
+        overlayCtx.strokeStyle = 'rgba(255, 255, 255, 1)';
+        overlayCtx.fillStyle = 'rgba(255, 255, 255, 1)';
+        overlayCtx.font = '12px sans-serif';
+        overlayCtx.textBaseline = 'top';
+        overlayCtx.textAlign = 'center'; // Moved to the top to fix day label alignment
+
+        const sYear = new Date(this.startMs).getFullYear();
+        const eYearCap = new Date(this.endMs).getFullYear();
+
+        const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+        const msPerDay = 24 * 60 * 60 * 1000;
+        const msPerYear = 365.25 * msPerDay;
+        const yearPixels = (msPerYear / this.timeSpan) * this.histWidth;
+
+        const isOneYearOrLess = this.timeSpan <= 366 * msPerDay;
+        const isUnderTwoMonths = this.timeSpan <= 62 * msPerDay;
+        const isUnderTwentyDays = this.timeSpan <= 20 * msPerDay;
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+        for (let year = sYear; year <= eYearCap; year++) {
+            let currentMonthMs = new Date(year + "/01/01 00:00:00").getTime();
+
+            for (let m = 0; m < 12; m++) {
+                if (m === 2) {
+                    currentMonthMs = new Date(year + "/03/01 00:00:00").getTime();
+                } else if (m > 0) {
+                    currentMonthMs += monthDays[m - 1] * msPerDay;
+                }
+
+                let daysInThisMonth = monthDays[m];
+                if (m === 1) {
+                    const march1 = new Date(year + "/03/01 00:00:00").getTime();
+                    daysInThisMonth = Math.round((march1 - currentMonthMs) / msPerDay);
+                }
+
+                const monthEndMs = currentMonthMs + (daysInThisMonth * msPerDay);
+
+                if (monthEndMs < this.startMs) continue;
+                if (currentMonthMs > this.endMs) break;
+
+                // --- DRAW MONTH TICK ---
+                if (currentMonthMs >= this.startMs && currentMonthMs <= this.endMs) {
+                    let drawMonthTick = true;
+                    if (!isOneYearOrLess) {
+                        if (m !== 0 && m !== 6) {
+                            if (m === 3 || m === 9) {
+                                if (yearPixels <= 100) drawMonthTick = false;
+                            } else {
+                                if (yearPixels <= 200) drawMonthTick = false;
+                            }
+                        }
+                    }
+
+                    if (drawMonthTick) {
+                        const x = ((currentMonthMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
+                        let tickLen = (m === 0 || m === 3 || m === 6 || m === 9) ? 10 : 6;
+
+                        overlayCtx.beginPath();
+                        overlayCtx.moveTo(x, histBottom);
+                        overlayCtx.lineTo(x, histBottom + tickLen);
+                        overlayCtx.stroke();
+
+                        if (m === 0) {
+                            const shortYear = (year % 100).toString().padStart(2, '0');
+                            overlayCtx.fillText(shortYear, x, histBottom + 12);
+                        } else if (yearPixels > 200) {
+                            overlayCtx.font = '12px sans-serif';
+                            if (isOneYearOrLess) {
+                                overlayCtx.fillText(monthNames[m], x, histBottom + 12);
+                            } else {
+                                if (m === 3) overlayCtx.fillText("Apr", x, histBottom + 12);
+                                else if (m === 6) overlayCtx.fillText("Jul", x, histBottom + 12);
+                                else if (m === 9) overlayCtx.fillText("Oct", x, histBottom + 12);
+                            }
+                        }
+                    }
+                }
+
+                // --- DRAW DAY TICKS ---
+                if (isOneYearOrLess) {
+                    overlayCtx.font = '11px sans-serif';
+                    for (let d = 2; d <= daysInThisMonth; d++) {
+                        const dayTickMs = currentMonthMs + (d - 1) * msPerDay;
+
+                        if (dayTickMs < this.startMs) continue;
+                        if (dayTickMs > this.endMs) break;
+
+                        const isIntervalTick = (d === 10 || d === 20);
+
+                        if (isUnderTwoMonths || isIntervalTick) {
+                            const x = ((dayTickMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
+                            let tickLen = isIntervalTick ? 6 : 3;
+
+                            overlayCtx.beginPath();
+                            overlayCtx.moveTo(x, histBottom);
+                            overlayCtx.lineTo(x, histBottom + tickLen);
+                            overlayCtx.stroke();
+
+                            if (isUnderTwentyDays || (isUnderTwoMonths && isIntervalTick)) {
+                                overlayCtx.fillText(d.toString(), x, histBottom + 12);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+
+
     drawHistogram: function() {
         if (this.maxBinValue === 0) return;
 
@@ -1074,71 +1182,7 @@ const overlayUI = {
         overlayCtx.lineTo(overlayCanvas.width-10, histBottom);
         overlayCtx.stroke();
 
-        // Draw time-scale ticks, years and months
-        overlayCtx.strokeStyle = 'rgba(255, 255, 255, 1)';
-        overlayCtx.fillStyle = 'rgba(255, 255, 255, 1)';
-        overlayCtx.font = '12px sans-serif';
-        overlayCtx.textBaseline = 'top';
-
-        const sYear = new Date(this.startMs).getFullYear();
-        const eYearCap = new Date(this.endMs).getFullYear(); // endMs is already the start of the next year
-
-        // Array of days into a standard 365-day year for the start of each month
-        const monthStartDays = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-
-        // Determine pixel width of one year to decide tick density
-        const msPerYear = 365 * 24 * 60 * 60 * 1000;
-        const yearPixels = (msPerYear / this.timeSpan) * this.histWidth;
-
-        for (let year = sYear; year <= eYearCap; year++) {
-            const yearStartMs = new Date(year + "/01/01 00:00:00").getTime();
-
-            for (let m = 0; m < 12; m++) {
-                // Determine tick visibility based on year scale
-                if (m !== 0 && m !== 6) { // Always show Jan (0) and Jul (6)
-                    if (m === 3 || m === 9) { // Apr (3) and Oct (9) are quarters
-                        if (yearPixels <= 100) continue;
-                    } else { // All other months
-                        if (yearPixels <= 200) continue;
-                    }
-                }
-
-                const tickMs = yearStartMs + (monthStartDays[m] * 24 * 60 * 60 * 1000);
-
-                // Don't draw left of start of scale
-                if (tickMs < this.startMs) continue;
-
-                // Stop drawing if we exceed the timeline bound
-                if (tickMs > this.endMs) break;
-
-                const x = ((tickMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
-
-                // Length of the tick line
-                let tickLen = 6; // shorter tick for regular months
-                if (m === 0 || m === 3 || m === 6 || m === 9) {
-                    tickLen = 10; // annual, semiannual, and quarterly
-                }
-
-                overlayCtx.beginPath();
-                overlayCtx.moveTo(x, histBottom);
-                overlayCtx.lineTo(x, histBottom + tickLen);
-                overlayCtx.stroke();
-
-                // Draw the text labels
-                overlayCtx.textAlign = 'center';
-                if (m === 0) {
-                    // Always draw the year on January
-                    const shortYear = (year % 100).toString().padStart(2, '0');
-                    overlayCtx.fillText(shortYear, x, histBottom + 12);
-                } else if (yearPixels > 200) {
-                    // Label specific months if we are zoomed in enough to see them
-                    if (m === 3) overlayCtx.fillText("Apr", x, histBottom + 12);
-                    else if (m === 6) overlayCtx.fillText("Jul", x, histBottom + 12);
-                    else if (m === 9) overlayCtx.fillText("Oct", x, histBottom + 12);
-                }
-            }
-        }
-
+        this.drawTimeScale(histBottom);
 
         // Draw Handles (5x12 "house" shape)
         const drawHandle = (x) => {
@@ -1146,12 +1190,12 @@ const overlayUI = {
             overlayCtx.strokeStyle = 'white'; // White outline
             overlayCtx.lineWidth = 1;
 
-            overlayCtx.beginPath();
-            overlayCtx.moveTo(x, histBottom - 3);        // Roof peak
-            overlayCtx.lineTo(x + 2.5, histBottom);   // Roof right (eaves)
-            overlayCtx.lineTo(x + 2.5, histBottom+9);       // Wall bottom right
-            overlayCtx.lineTo(x - 2.5, histBottom+9);       // Wall bottom left
-            overlayCtx.lineTo(x - 2.5, histBottom);   // Roof left (eaves)
+            overlayCtx.beginPath();  // draw house shaped pentagon for the marker.
+            overlayCtx.moveTo(x, histBottom - 3);     // peak point
+            overlayCtx.lineTo(x + 2.5, histBottom);
+            overlayCtx.lineTo(x + 2.5, histBottom+9);
+            overlayCtx.lineTo(x - 2.5, histBottom+9);
+            overlayCtx.lineTo(x - 2.5, histBottom);
             overlayCtx.closePath();
 
             overlayCtx.fill();
@@ -1160,8 +1204,6 @@ const overlayUI = {
 
         drawHandle(this.startX);
         drawHandle(this.endX);
-
-
 
         // --- DRAW SELECTED DATE RANGE TEXT ---
         const startD = new Date(this.filterStartMs);
@@ -1186,11 +1228,11 @@ const overlayUI = {
             } else {
                 dateText = formatD(startD) + " -- " + formatD(endD);
             }
-            dateText += "    "+visibleImages.length+" of "+this.numAllImagesLatLon +" shown"
+            dateText += "        "+visibleImages.length+" of "+this.numAllImagesLatLon +" shown"
         }
 
         overlayCtx.fillStyle = 'rgba(255, 255, 255, 1)';
-        overlayCtx.font = 'italic 15px sans-serif';
+        overlayCtx.font = 'italic 14px sans-serif';
         overlayCtx.textAlign = 'left';
         overlayCtx.fillText(dateText, 0, 130);
 
@@ -1216,7 +1258,6 @@ const overlayUI = {
         this.drawScaleBar();
     },
 
-
     seekImageFromX: function(mouseX) {
         const timeSpan = this.endMs - this.startMs;
         // Calculate ratio relative to the histogram's padding
@@ -1228,7 +1269,6 @@ const overlayUI = {
         //console.log("Histogram seek to time:"+(new Date(targetMs)).toLocaleString());
         return chronological.findNearestMsImage(targetMs);
     },
-
 
     drawScaleBar: function() {
     // draw a legend showing what the current scale is.
@@ -1260,7 +1300,6 @@ const overlayUI = {
 
         // Position the HTML anchor tag dynamically
         const mapLink = document.getElementById('map-link');
-
         if (mapLink) {
             mapLink.style.left = "330px";
             mapLink.style.top = "25px"
@@ -1388,6 +1427,7 @@ const handleStart = (x, y, isTouch) => {
     }
     draw(); // Redraw to clear the red selection circle
 };
+
 const handleMove = (x, y, isTouch) => {
     if (view.dragging) {
         view.dragOffset.x = x - view.dragStart.x;
@@ -1414,12 +1454,11 @@ const handleMove = (x, y, isTouch) => {
 
 canvas.addEventListener('pointerleave', e => {
     if (e.pointerType !== 'mouse') return;
-    if (view.dragging) return; 
+    if (view.dragging) return;
     // if mouse hover moves over the hitbox, just call handleMove with off-screen
     // coordinates so that hover highlight will clear or revert to selected.
     handleMove(-100,-100,0);
 });
-
 
 
 const finalizePanZoomInteraction = () => {
@@ -1458,7 +1497,6 @@ const finalizePanZoomInteraction = () => {
     saveView(); // Save the new committed state to URL/LocalStorage
 };
 
-
 canvas.addEventListener('touchstart', e => {
     // Finish any existing motion before starting a new one
     if (view.dragging || view.pinchScale !== 1.0) finalizePanZoomInteraction();
@@ -1479,7 +1517,6 @@ canvas.addEventListener('touchstart', e => {
         view.pinchCenter = { ...view.pinchStartCenter };
     }
 }, { passive: false });
-
 
 canvas.addEventListener('touchmove', e => {
 // Single ad dual finger actions on mobile screen
@@ -1538,7 +1575,6 @@ canvas.addEventListener('pointerup', e => {
     canvas.releasePointerCapture(e.pointerId);
     if (view.dragging) finalizePanZoomInteraction();
 });
-
 
 
 canvas.addEventListener('wheel', e => {
@@ -1605,8 +1641,7 @@ function handleWindowResize()
     canvas.height = window.innerHeight;
     updateVisibleData();
 }
-
-
+window.addEventListener('resize', handleWindowResize)
 
 const hitbox = document.getElementById('timeline-hitbox');
 let activeTimelineDrag = null;
@@ -1680,8 +1715,6 @@ document.getElementById('zoom-btn').addEventListener('click', (e) => {
     }
 });
 
-
-window.addEventListener('resize', handleWindowResize)
 
 function parseUrlParameters() {
     const search = window.location.search;
