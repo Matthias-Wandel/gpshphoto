@@ -15,8 +15,8 @@
         }
 
         #timeline-hitbox {
-            position: absolute; top: 90px; left: 8px; /* Fixed from the top, aligning with histBottom */
-            width: 384px; height: 20px;
+            position: absolute; top: 80px; left: 8px; /* Fixed from the top, aligning with histBottom */
+            width: 384px; height: 30px;
             z-index: 1001; cursor: pointer; pointer-events: auto;
         }
 
@@ -1402,10 +1402,24 @@ const handleMove = (x, y, isTouch) => {
         } else if (selectedImage) {
             // Snap back to selected image if not hovering anything else
             updateOverlay(selectedImage);
+        } else {
+            // If none selected and not hovering, hide the preview window.
+            currentPreview = null;
+            uiOverlay.style.display = 'none';
+            overlayUI.setSelectedTime(0);
         }
         if (wasCurrent != currentPreview) draw()
     }
 };
+
+canvas.addEventListener('pointerleave', e => {
+    if (e.pointerType !== 'mouse') return;
+    if (view.dragging) return; 
+    // if mouse hover moves over the hitbox, just call handleMove with off-screen
+    // coordinates so that hover highlight will clear or revert to selected.
+    handleMove(-100,-100,0);
+});
+
 
 
 const finalizePanZoomInteraction = () => {
