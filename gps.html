@@ -1036,32 +1036,27 @@ const overlayUI = {
         const sYear = new Date(this.startMs).getFullYear();
         const eYearCap = new Date(this.endMs).getFullYear();
 
-        const monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+        let monthDays = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
         const msPerDay = 24 * 60 * 60 * 1000;
         const msPerYear = 365.25 * msPerDay;
         const yearPixels = (msPerYear / this.timeSpan) * this.histWidth;
-
-        const isOneYearOrLess = this.timeSpan <= 366 * msPerDay;
-        const isUnderTwoMonths = this.timeSpan <= 62 * msPerDay;
-        const isUnderTwentyDays = this.timeSpan <= 20 * msPerDay;
         const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
         for (let year = sYear; year <= eYearCap; year++) {
             let currentMonthMs = new Date(year + "/01/01 00:00:00").getTime();
 
             for (let m = 0; m < 12; m++) {
-                if (m === 2) {
-                    currentMonthMs = new Date(year + "/03/01 00:00:00").getTime();
-                } else if (m > 0) {
+                if (m > 0) {
                     currentMonthMs += monthDays[m - 1] * msPerDay;
                 }
 
-                let daysInThisMonth = monthDays[m];
                 if (m === 1) {
+                    // Adjust February length for leap years
                     const march1 = new Date(year + "/03/01 00:00:00").getTime();
-                    daysInThisMonth = Math.round((march1 - currentMonthMs) / msPerDay);
+                    monthDays[1] = Math.round((march1 - currentMonthMs) / msPerDay);
                 }
+                let daysInThisMonth = monthDays[m];
 
                 const monthEndMs = currentMonthMs + (daysInThisMonth * msPerDay);
 
@@ -1071,7 +1066,7 @@ const overlayUI = {
                 // --- DRAW MONTH TICK ---
                 if (currentMonthMs >= this.startMs && currentMonthMs <= this.endMs) {
                     let drawMonthTick = true;
-                    if (!isOneYearOrLess) {
+                    if (yearPixels < 400) {
                         if (m !== 0 && m !== 6) {
                             if (m === 3 || m === 9) {
                                 if (yearPixels <= 100) drawMonthTick = false;
@@ -1091,11 +1086,16 @@ const overlayUI = {
                         overlayCtx.stroke();
 
                         if (m === 0) {
-                            const shortYear = (year % 100).toString().padStart(2, '0');
+
+                            let shortYear = (year % 100).toString().padStart(2, '0');
+                            if (yearPixels > 50){
+                                shortYear = year.toString();
+                            }
+
                             overlayCtx.fillText(shortYear, x, histBottom + 12);
-                        } else if (yearPixels > 200) {
+                        } else if (yearPixels > 150) {
                             overlayCtx.font = '12px sans-serif';
-                            if (isOneYearOrLess) {
+                            if (yearPixels > 500) {
                                 overlayCtx.fillText(monthNames[m], x, histBottom + 12);
                             } else {
                                 if (m === 3) overlayCtx.fillText("Apr", x, histBottom + 12);
@@ -1107,7 +1107,7 @@ const overlayUI = {
                 }
 
                 // --- DRAW DAY TICKS ---
-                if (isOneYearOrLess) {
+                if (yearPixels >= 600) {
                     overlayCtx.font = '11px sans-serif';
                     for (let d = 2; d <= daysInThisMonth; d++) {
                         const dayTickMs = currentMonthMs + (d - 1) * msPerDay;
@@ -1117,7 +1117,7 @@ const overlayUI = {
 
                         const isIntervalTick = (d === 10 || d === 20);
 
-                        if (isUnderTwoMonths || isIntervalTick) {
+                        if (yearPixels >= 2000 || isIntervalTick) {
                             const x = ((dayTickMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
                             let tickLen = isIntervalTick ? 6 : 3;
 
@@ -1126,7 +1126,7 @@ const overlayUI = {
                             overlayCtx.lineTo(x, histBottom + tickLen);
                             overlayCtx.stroke();
 
-                            if (isUnderTwentyDays || (isUnderTwoMonths && isIntervalTick)) {
+                            if ((yearPixels > 7000) || (yearPixels > 2000 && isIntervalTick)) {
                                 overlayCtx.fillText(d.toString(), x, histBottom + 12);
                             }
                         }
