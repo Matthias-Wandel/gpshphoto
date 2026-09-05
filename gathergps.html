@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+s<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -104,6 +104,7 @@
         <div class="progress-container" id="progress-container">
             <div class="progress-bar" id="progress-bar"></div>
         </div>
+        <div id="stats" style="font-weight: bold; margin-top: 10px;"></div>
     </div>
 
     <div id="complete-view" class="hidden">
@@ -119,8 +120,6 @@
         <p style="margin-top: 25px; margin-bottom: 25px; color: #7f8c8d;">The synchronization engine has concluded successfully. You can now load your navigation map.</p>
         <a href="gps.html" class="btn btn-success">Browse Images on Map</a>
     </div>
-
-    <div id="stats" style="font-weight: bold; margin-top: 20px;"></div>
 </div>
 
 <script>
@@ -140,11 +139,13 @@
     let isChromium = typeof window.showDirectoryPicker === 'function';
     let targetDirectoryHandle = null;
 
+    // Environmental Fallback Interface Tuning
     if (!isChromium) {
         pickerBtn.classList.add('hidden');
         document.getElementById('drop-text').innerHTML = "Drag & Drop your Photos Folder here<br><small style='color:#7f8c8d;'>(Firefox requires folder drag-and-drop support)</small>";
     }
 
+    // Interactive Drag and Drop Boundary Events
     ['dragenter', 'dragover'].forEach(eventName => {
         dropZone.addEventListener(eventName, (e) => {
             e.preventDefault();
@@ -165,6 +166,7 @@
 
         switchToProcessing();
 
+        // Attempt to intercept direct Directory Handles if run on Chromium
         if (isChromium && typeof items[0].getAsFileSystemHandle === 'function') {
             try {
                 const handle = await items[0].getAsFileSystemHandle();
@@ -175,16 +177,17 @@
                     return;
                 }
             } catch (err) {
-                console.warn("Folder access redirected to legacy engine", err);
+                console.warn("Modern folder drop capture bypassed, pivoting to legacy engine", err);
             }
         }
 
+        // Native Firefox and standard fallback Engine
         const entry = items[0].webkitGetAsEntry();
         if (entry && entry.isDirectory) {
             await scanLegacyDirectory(entry);
             await finalizeExport();
         } else {
-            alert("Operational Failure: Please drop a parent folder directory layout.");
+            alert("Operational Failure: Please drop a parent directory folder tree structure.");
             resetUI();
         }
     });
@@ -211,7 +214,7 @@
         setupView.classList.add('hidden');
         processView.classList.remove('hidden');
         progressContainer.style.display = 'block';
-        statusText.innerText = "Indexing directory branch entries...";
+        statusText.innerText = "Indexing files inside structure...";
         updateStats();
     }
 
@@ -219,8 +222,9 @@
         statsDiv.innerText = `Files Checked: ${processedFiles} | GPS Coordinate Records: ${outputLines.length}`;
     }
 
+    // Chromium Asynchronous Streaming Engine Loop
     async function scanModernDirectory(dirHandle, currentPath = "") {
-        statusText.innerText = `Traversing: ${currentPath || "Root Folder Layout"}`;
+        statusText.innerText = `Traversing directory branch: ${currentPath || "Root Layout"}`;
         for await (const entry of dirHandle.values()) {
             const relativePath = currentPath ? `${currentPath}/${entry.name}` : entry.name;
             if (entry.kind === 'directory') {
@@ -231,15 +235,18 @@
                     const file = await entry.getFile();
                     await processImageFile(file, relativePath);
                 }
-                updateStats();
+                if (processedFiles % 25 === 0) updateStats();
             }
         }
     }
 
+    // Firefox Legacy Batch Engine Loop (Capped asynchronous processing chunks)
     function scanLegacyDirectory(directoryEntry, currentPath = null) {
         return new Promise((resolve) => {
+            // Skips root folder name to start relative tracking at content origin
             const relativePath = currentPath === null ? "" : (currentPath === "" ? directoryEntry.name : `${currentPath}/${directoryEntry.name}`);
-            statusText.innerText = `Traversing: ${relativePath || "Root Content Tree"}`;
+
+            statusText.innerText = `Traversing directory branch: ${relativePath || "Root Content"}`;
 
             const dirReader = directoryEntry.createReader();
             const bufferedEntries = [];
@@ -257,7 +264,7 @@
                                     const filePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
                                     await processImageFile(file, filePath);
                                 }
-                                updateStats();
+                                if (processedFiles % 25 === 0) updateStats();
                             }
                         }
                         resolve();
@@ -279,7 +286,7 @@
 
     function isImageFile(filename) {
         const ext = filename.split('.').pop().toLowerCase();
-        return ['jpg', 'jpeg', 'webp', 'heic', 'heif'].includes(ext);
+        return ['jpg', 'jpeg', 'webp'].includes(ext);
     }
 
     async function processImageFile(file, path) {
@@ -287,8 +294,6 @@
             const ext = file.name.split('.').pop().toLowerCase();
             if (ext === 'webp') {
                 await processWebpFile(file, path);
-            } else if (ext === 'heic' || ext === 'heif') {
-                await processHeicFile(file, path);
             } else {
                 await processJpegFile(file, path);
             }
@@ -297,93 +302,114 @@
         }
     }
 
+    // JPEG Binary Header Parser
     async function processJpegFile(file, path) {
-        const buffer = await file.slice(0, 65536).arrayBuffer();
+        const buffer = await file.slice(0, 32768).arrayBuffer();
         const dataView = new DataView(buffer);
+
         if (dataView.byteLength < 4) return;
-        if (dataView.getUint16(0) !== 0xFFD8) return;
+        if (dataView.getUint16(0) !== 0xFFD8) return; // Discard invalid JPEG files
 
         let offset = 2;
         let exifData = null;
+
         while (offset < dataView.byteLength - 2) {
             const marker = dataView.getUint16(offset);
             const length = dataView.getUint16(offset + 2);
-            if (marker === 0xFFE1) {
+
+            if (marker === 0xFFE1) { // App1 segment marker
                 exifData = parseExif(dataView, offset + 4, length - 2);
                 break;
             }
             offset += 2 + length;
         }
-        if (exifData && exifData.lat !== null && exifData.lon !== null) {
+
+        if (exifData && exifData.lat && exifData.lon) {
             recordExifData(exifData, path);
         }
     }
 
+    // WebP Chunk Hopping Parser (Runs early termination matching VP8X bitmap)
     async function processWebpFile(file, path) {
-        const headBuffer = await file.slice(0, 100).arrayBuffer();
+        // Fetch the first 30 bytes to check container headers and VP8X extended metadata bits
+        const headBuffer = await file.slice(0, 30).arrayBuffer();
         const headView = new DataView(headBuffer);
+
         if (headView.byteLength < 30) return;
-        if (headView.getUint32(0, false) !== 0x52494646) return;
-        if (headView.getUint32(8, false) !== 0x57454250) return;
+        if (headView.getUint32(0, false) !== 0x52494646) return; // "RIFF"
+        if (headView.getUint32(8, false) !== 0x57454250) return; // "WEBP"
 
         const firstChunkId = headView.getUint32(12, false);
-        if (firstChunkId === 0x56503820 || firstChunkId === 0x5650384C) return;
 
-        if (firstChunkId === 0x56503858) {
-            const flags = headView.getUint8(20);
-            const hasExif = (flags & 0x08) !== 0;
-            if (!hasExif) return;
+        // Early termination: Simple lossy/lossless profiles never hold EXIF chunks
+        if (firstChunkId === 0x56503820 || firstChunkId === 0x5650384C) return; // "VP8 " or "VP8L"
+
+        if (firstChunkId === 0x56503858) { // "VP8X" (Extended layout container)
+            const flags = headView.getUint8(20); // Byte 20 holds layout configuration flag map
+            const hasExif = (flags & 0x08) !== 0; // Check if Bit 3 (EXIF metadata present) is true
+            if (!hasExif) return; // Bitmap states no metadata exists inside: terminate immediately!
         } else {
-            return;
+            return; // Exit on invalid formats
         }
 
+        // Traverse WebP file chunks sequentially by checking chunk headers (hopping)
         let offset = 12;
-        const sizeToRead = Math.min(file.size, 65536);
-        const fileBlob = file.slice(0, sizeToRead);
-        const fullBuffer = await fileBlob.arrayBuffer();
-        const fullView = new DataView(fullBuffer);
+        const fileSize = file.size;
 
-        while (offset + 8 <= fullView.byteLength) {
-            const chunkId = fullView.getUint32(offset, false);
-            const chunkSize = fullView.getUint32(offset + 4, true);
+        while (offset + 8 <= fileSize) {
+            const headerBlob = file.slice(offset, offset + 8);
+            const headerBuffer = await headerBlob.arrayBuffer();
+            if (headerBuffer.byteLength < 8) break;
+            const headerView = new DataView(headerBuffer);
 
-            if (chunkId === 0x45584946) {
-                const exifData = parseExif(fullView, offset + 8, chunkSize);
-                if (exifData && exifData.lat !== null && exifData.lon !== null) {
+            const chunkId = headerView.getUint32(0, false);
+            const chunkSize = headerView.getUint32(4, true); // WebP sizes are stored in Little Endian
+
+            if (chunkId === 0x45584946) { // "EXIF" Chunk Signature
+                // Extract EXIF data segment
+                const exifBlob = file.slice(offset + 8, offset + 8 + chunkSize);
+                const exifBuffer = await exifBlob.arrayBuffer();
+                const exifView = new DataView(exifBuffer);
+
+                const exifData = parseExif(exifView, 0, chunkSize);
+                if (exifData && exifData.lat && exifData.lon) {
                     recordExifData(exifData, path);
                 }
-                break;
+                break; // Parser complete, terminate seek operations
             }
+
+            // Advance to the next chunk header (Chunk Header Size + Chunk Data + Pad Byte if odd)
             const nextOffset = offset + 8 + chunkSize + (chunkSize % 2);
-            if (nextOffset <= offset) break;
+            if (nextOffset <= offset) break; // Avoid loops on corruption
             offset = nextOffset;
         }
     }
 
-    // Lean, targeted single-pass signature scanner
+    // HEIC Fast Byte Pattern Search Parser
     async function processHeicFile(file, path) {
-        try {
-            const sizeToRead = Math.min(file.size, 65536);
-            const buffer = await file.slice(0, sizeToRead).arrayBuffer();
-            const arr = new Uint8Array(buffer);
-            const view = new DataView(buffer);
-
-            // Explicitly search for "Exif\0\0MM\0*" (Big-Endian iPhone Container Layout Pattern)
-            for (let i = 0; i <= arr.length - 10; i++) {
-                if (arr[i] === 0x45 && arr[i+1] === 0x78 && arr[i+2] === 0x69 && arr[i+3] === 0x66 && // "Exif"
-                    arr[i+4] === 0x00 && arr[i+5] === 0x00 &&                                         // "\0\0"
-                    arr[i+6] === 0x4D && arr[i+7] === 0x4D &&                                         // "MM" (Big Endian)
-                    arr[i+8] === 0x00 && arr[i+9] === 0x2A) {                                         // "\0*" (TIFF Magic 42)
-
-                    const exifData = parseExif(view, i, arr.length - i);
-                    if (exifData && exifData.lat !== null && exifData.lon !== null) {
-                        recordExifData(exifData, path);
-                    }
-                    break; // Matched, processed, move to next file
-                }
+        const sizeToRead = Math.min(file.size, 10000);
+        const buffer = await file.slice(0, sizeToRead).arrayBuffer();
+        const arr = new Uint8Array(buffer);
+        
+        let idx = -1;
+        for (let i = 0; i <= arr.length - 6; i++) {
+            if (arr[i] === 0x45 &&     // 'E'
+                arr[i+1] === 0x78 &&   // 'x'
+                arr[i+2] === 0x69 &&   // 'i'
+                arr[i+3] === 0x66 &&   // 'f'
+                arr[i+4] === 0x00 &&   // '\0'
+                arr[i+5] === 0x00) {   // '\0'
+                idx = i;
+                break;
             }
-        } catch (err) {
-            console.error(`[HEIC Error] Problem parsing asset path: ${path}`, err);
+        }
+        
+        if (idx !== -1) {
+            const exifView = new DataView(buffer);
+            const exifData = parseExif(exifView, idx, sizeToRead - idx);
+            if (exifData && exifData.lat && exifData.lon) {
+                recordExifData(exifData, path);
+            }
         }
     }
 
@@ -395,26 +421,29 @@
         outputLines.push(block);
     }
 
+    // Unified EXIF Parser: Decodes raw TIFF structures (WebP) & JPEG envelopes
     function parseExif(view, startOffset, length) {
         try {
             let tiffHeaderStart = startOffset;
-            if (view.byteLength >= startOffset + 6 &&
-                view.getUint32(startOffset) === 0x45786966 &&
+            
+            // If JPEG-wrapped, peel back the "Exif\0\0" (6 bytes) signature prefix
+            if (view.byteLength >= startOffset + 6 && 
+                view.getUint32(startOffset) === 0x45786966 && 
                 view.getUint16(startOffset + 4) === 0x0000) {
                 tiffHeaderStart = startOffset + 6;
             }
-
+            
             if (view.byteLength < tiffHeaderStart + 8) return null;
-
+            
             const sig = view.getUint16(tiffHeaderStart);
-            const isLittleEndian = (sig === 0x4949);
-            if (!isLittleEndian && sig !== 0x4D4D) return null;
-
+            const isLittleEndian = (sig === 0x4949); // "II"
+            if (!isLittleEndian && sig !== 0x4D4D) return null; // "MM"
+            
             if (view.getUint16(tiffHeaderStart + 2, isLittleEndian) !== 42) return null;
-
+            
             const ifd0Offset = view.getUint32(tiffHeaderStart + 4, isLittleEndian);
             let currentIfdOffset = tiffHeaderStart + ifd0Offset;
-
+            
             let metadata = { lat: null, lon: null, dateTime: '', camera: '' };
             let gpsInfoOffset = null;
             let make = '', model = '';
@@ -422,20 +451,20 @@
             if (view.byteLength < currentIfdOffset + 2) return null;
             const numEntries0 = view.getUint16(currentIfdOffset, isLittleEndian);
             let entryPtr = currentIfdOffset + 2;
-
+            
             for (let i = 0; i < numEntries0; i++) {
                 if (view.byteLength < entryPtr + 12) break;
                 const tag = view.getUint16(entryPtr, isLittleEndian);
                 const valOffset = view.getUint32(entryPtr + 8, isLittleEndian);
-
+                
                 if (tag === 0x010F) make = readAscii(view, tiffHeaderStart + valOffset);
                 if (tag === 0x0110) model = readAscii(view, tiffHeaderStart + valOffset);
                 if (tag === 0x8825) gpsInfoOffset = valOffset;
                 if (tag === 0x9003 || tag === 0x0132) metadata.dateTime = readAscii(view, tiffHeaderStart + valOffset);
-
+                
                 entryPtr += 12;
             }
-
+            
             metadata.camera = [make, model].filter(Boolean).join(' ').trim();
 
             if (gpsInfoOffset !== null) {
@@ -443,6 +472,7 @@
                 if (view.byteLength >= gpsPtr + 2) {
                     const numGpsEntries = view.getUint16(gpsPtr, isLittleEndian);
                     gpsPtr += 2;
+                    
                     let latRef = 'N', lonRef = 'E';
                     let latDegrees = null, lonDegrees = null;
 
@@ -450,18 +480,19 @@
                         if (view.byteLength < gpsPtr + 12) break;
                         const tag = view.getUint16(gpsPtr, isLittleEndian);
                         const valOffset = view.getUint32(gpsPtr + 8, isLittleEndian);
-
+                        
                         if (tag === 1) latRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
                         if (tag === 2) latDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
                         if (tag === 3) lonRef = String.fromCharCode(view.getUint8(gpsPtr + 8));
                         if (tag === 4) lonDegrees = readRationalTriple(view, tiffHeaderStart + valOffset, isLittleEndian);
-
+                        
                         gpsPtr += 12;
                     }
 
                     if (latDegrees && lonDegrees) {
                         metadata.lat = latDegrees[0] + latDegrees[1]/60 + latDegrees[2]/3600;
                         if (latRef === 'S') metadata.lat = -metadata.lat;
+                        
                         metadata.lon = lonDegrees[0] + lonDegrees[1]/60 + lonDegrees[2]/3600;
                         if (lonRef === 'W') metadata.lon = -metadata.lon;
                     }
@@ -469,6 +500,7 @@
             }
             return metadata;
         } catch (e) {
+            console.warn("Graceful fallback: failed parsing potential EXIF structure.", e);
             return null;
         }
     }
@@ -496,21 +528,25 @@
 
     async function finalizeExport() {
         updateStats();
-        statusText.innerText = "Compiling image coordinate array database...";
+        statusText.innerText = "Packaging local coordinate string database...";
+
         const finalContent = `const rawImageData = \`\n${outputLines.join('\n')}\n\`;`;
 
         processView.classList.add('hidden');
         completeView.classList.remove('hidden');
 
+        // Route processing context split based on write permissions
         if (isChromium && targetDirectoryHandle) {
             try {
+                // Requests/Overwrites file handles natively in location context
                 const fileHandle = await targetDirectoryHandle.getFileHandle('gpstagged.js', { create: true });
                 const writable = await fileHandle.createWritable();
                 await writable.write(finalContent);
                 await writable.close();
+
                 chromeNotice.classList.remove('hidden');
             } catch (err) {
-                console.warn("Direct workspace write blocked, offering download alternative.", err);
+                console.warn("Direct native drive write rejected, reverting system to manual trigger.", err);
                 triggerManualDownload(finalContent);
             }
         } else {
@@ -526,6 +562,7 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+
         firefoxNotice.classList.remove('hidden');
     }
 
