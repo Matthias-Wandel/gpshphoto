@@ -87,6 +87,7 @@ let visibleImages = [];
 let clusters = [];
 let selectedImage = null;
 let currentPreview = null;
+let hasUrlCoordinates = false;
 
 
 
@@ -158,9 +159,31 @@ function initData() {
     // Alert the user if gpstagged.js (containing rawImageData) is missing
     if (typeof rawImageData !== 'undefined') {
         parseData(rawImageData);
+
+        if (!hasUrlCoordinates && images.length > 0) {
+            // Figure out some default coordinates to use.
+
+            // Find the 5% and 95% longitude bounds
+            const lon5 = images[Math.floor(images.length * 0.05)].lon;
+            const lon95 = images[Math.min(images.length - 1, Math.floor(images.length * 0.95))].lon;
+
+            view.lon = (lon5 + lon95) / 2; // Center view's longitude betwen 9 and 95% bounds
+
+            // For latitude center, computer average latitude
+            let sumLat = 0;
+            for (let i = 0; i < images.length; i++) sumLat += images[i].lat;
+            view.lat = sumLat / images.length;
+
+            // Compute view.latHeight to fit the longitude spread & ensure minimum width
+            const lonWidth = Math.max(0.001, lon95 - lon5);
+
+            // Convert longitude width to latitude height using window aspect ratio and Mercator distortion
+            view.latHeight = lonWidth * Math.cos(view.lat * Math.PI / 180) * (window.innerHeight / window.innerWidth);
+        }
+
         updateVisibleData();
     } else {
-        alert("gpstagged.js not found or rawImageData not created.");
+        alert("gpstagged.js not found.\nPlease run gathergps.html and copy gpstagged.js to the root of yor images directory, same directory as gps.html");
     }
 }
 
@@ -1706,6 +1729,7 @@ function parseUrlParameters() {
     // Get URL lat/lon/scale
     const geoMatch = search.match(/@([\d.-]+),([\d.-]+)(?:,([\d.]+)([mz]))?/);
     if (geoMatch) {
+        hasUrlCoordinates = true;
         view.lat = parseFloat(geoMatch[1]);
         view.lon = parseFloat(geoMatch[2]);
         const val = parseFloat(geoMatch[3]);
