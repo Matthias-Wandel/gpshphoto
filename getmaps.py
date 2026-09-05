@@ -1,3 +1,6 @@
+# I used this script to grab some off-line basemaps to use for my gps browser.
+# I recommend you don't use this, as I have since added the ability to use basemaps directly from the internet.
+#
 # Script to grab client area of google chrome on google maps.
 # Start google crome in debug mode, then navigate to maps to capture, and run this script to grab a screenshot.
 # cut off all the legend stuff, and save it with coordinates in a file.
