@@ -1,4 +1,6 @@
-Prompts used to create gpsbrowse.html using Google Gemini
+Original prompt used to create the start of gpsbrowse.html (later gps.html) using Google Gemini from FEb 2025.
+
+
 This is sort of like documentation :)
 -----------------------------------------
 

@@ -1,14 +1,20 @@
-# Program to gater info for all pictures with GPS coordinates in them
-# for HTML GPS coordinated browsing javascript program.
-# Feb 2026
+# This python program works on MY picture directory tree, if you are interested.
+# If you aren't familiar with Python, please use gatergps.html instead.
+#
+# This script gathers metadata for all images with GPS coordinates in them
+# and puts the metadta in gpstagged.js, which gps.html loads to get all the picture metadata.
+#
+# It assumes the photos are organized the way I keep them organized on
+# my computer, with a file "imagedata.cached" in each directory with the metadata already
+# extracted into it, and a subdirecory "_small" with thumbnails.
+#
+# AI generated, Feb 2026
 
 import os
 import re
 
 OUTPUT_FILE = "gpstagged.js"
-
 ROOT_DIR = "."            
-
 
 # Regex patterns
 re_filename = re.compile(r"^File name\s*:\s*(.+)$", re.M)
@@ -24,7 +30,6 @@ def dms_to_decimal(sign, deg, minutes, seconds):
     return value
 
 # Start the Javascript structure
-
 print("Gathering GPS data to file:",OUTPUT_FILE)
 outfile = open(OUTPUT_FILE, "w", encoding="utf-8")
 print("thumbnailSubdir = '_small'",file=outfile)
