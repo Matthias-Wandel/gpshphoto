@@ -193,7 +193,7 @@ function parseData(text) {
             images.push(imageElement);
         }
     }
-    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.camera > b.camera || a.timeMs - b.timeMs);
+    images.sort((a, b) => a.lon - b.lon || a.lat - b.lat || a.timeMs - b.timeMs);
 }
 
 // --- COORDINATE TRANSFORMATIONS ---
@@ -286,13 +286,8 @@ const chronological = {
         if (action === "first") return chronoIndexArray[0];
         if (action === "last") return chronoIndexArray[chronoIndexArray.length - 1];
 
-        if (currentIndex === -1){
-            // if current image falls outside time filtered range, pick first or last instead.
-            if (action < 0){
-                return chronoIndexArray[0];
-            }else{
-                return chronoIndexArray.at(-1) // Grab last element
-            }
+        if (currentIndex === -1){ // if current falls outside time filtered range, pick first or last
+            return action < 0 ? chronoIndexArray[0] : chronoIndexArray.at(-1);
         }
 
         const currentPos = chronoIndexArray.indexOf(currentIndex);
@@ -363,9 +358,7 @@ const baseMap_OpenStreetMaps = {
     },
 
     draw() {
-        let zoom = Math.round(Math.log2(180 / view.latHeight));
-        if (zoom < 0) zoom = 0;
-        if (zoom > 19) zoom = 19;
+        const zoom = Math.max(0, Math.min(19, Math.round(Math.log2(180 / view.latHeight))));
 
         const topLeftGeo = xy2latLon(0, 0);
         const bottomRightGeo = xy2latLon(canvas.width, canvas.height);
@@ -870,7 +863,7 @@ const endOfTimeMs = new Date("2100/01/01  00:00:00").getTime();
 
 const overlayUI = {
     numBins: 128,
-    bins: new Array(this.numBins).fill(0),
+    bins: new Array(128).fill(0),
     maxBinValue: 0,
     numAllImagesLatLon: 0,  // Number of images with GPS coordinages (pre-filtering)
     lockedStartMs: null,    // Zoomed in histogram start and end times, null for auto.
@@ -887,8 +880,8 @@ const overlayUI = {
     endX: 0,
     selectedTimeMs: 0, // 0 when no image is selected
     histLeft: 10,
-    histWidth: 400-20, // 400 pix window, 10 pix margin either side.
-    timespan: 31536000000, // Default value 1 year of miliseconds
+    //histWidth: 400-20, // 400 pix window, 10 pix margin either side.
+    timeSpan: 31536000000, // Default value 1 year of miliseconds
 
 
     updateTimeline: function(images) {
@@ -1016,14 +1009,9 @@ const overlayUI = {
             this.filterEndMs = targetMS;
         }
 
-        // Iunlock the zoom scale start or end to 'auto' if marker are moved to the end of the scale.
-        if (this.filterStartMs <= startOfTimeMs) {
-            this.lockedStartMs = null;
-        }
-
-        if (this.filterEndMs >= endOfTimeMs) {
-            this.lockedEndMs = null;
-        }
+        // Unlock the zoom scale start or end to 'auto' if marker are dragged to the end of the scale.
+        if (this.filterStartMs <= startOfTimeMs) this.lockedStartMs = null;
+        if (this.filterEndMs >= endOfTimeMs) this.lockedEndMs = null;
     },
 
     drawTimeScale: function(histBottom) {
@@ -1052,7 +1040,7 @@ const overlayUI = {
                 }
 
                 if (m === 1) {
-                    // Adjust February length for leap years
+                    // Adjust February length to handle leap years
                     const march1 = new Date(year + "/03/01 00:00:00").getTime();
                     monthDays[1] = Math.round((march1 - currentMonthMs) / msPerDay);
                 }
@@ -1097,10 +1085,8 @@ const overlayUI = {
                             overlayCtx.font = '12px sans-serif';
                             if (yearPixels > 500) {
                                 overlayCtx.fillText(monthNames[m], x, histBottom + 12);
-                            } else {
-                                if (m === 3) overlayCtx.fillText("Apr", x, histBottom + 12);
-                                else if (m === 6) overlayCtx.fillText("Jul", x, histBottom + 12);
-                                else if (m === 9) overlayCtx.fillText("Oct", x, histBottom + 12);
+}                           else if (m % 3 == 0){
+                                overlayCtx.fillText(monthNames[m], x, histBottom + 12); // Only quarterly month labels
                             }
                         }
                     }
@@ -1143,11 +1129,9 @@ const overlayUI = {
         overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
         overlayCtx.fillStyle = 'rgba(60, 180, 255, 1)';
 
-        // Bar length leaves 10 pix on either end so legend below still fits.
-
         const histHeight = 50;
         const histBottom = 100;
-        this.histWidth = overlayCanvas.width-20;
+        this.histWidth = overlayCanvas.width-20; // Bar length leaves 10 pix on either end so legend below still fits.
         const barWidth = this.histWidth/this.numBins;
 
         // X positions of time filter start stop handles
