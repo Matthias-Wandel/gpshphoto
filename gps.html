@@ -1338,11 +1338,13 @@ function updateOverlay(img) {
     };
 
     {
-        // compute path to thumbnail (which may be in a directory called _small)
-        let p = currentPreview.path.replace(/\\/g, '/');
-        let parts = p.split('/');
-        let fn = parts.pop();
-        previewImg.src = parts.length > 0 ? `${parts.join('/')}/_small/${fn}` : `_small/${fn}`;
+        previewImg.src = currentPreview.path.replace(/\\/g, '/');
+        if (typeof thumbnailSubdir !== 'undefined'){
+            // There are thumbnails in a separate subdirectory off of each directory
+            let parts = previewImg.src.split('/');
+            let fn = parts.pop();
+            previewImg.src = parts.join('/') + '/' + thumbnailSubdir + '/' + fn;
+        }
     }
 
     infoText.innerHTML = '';

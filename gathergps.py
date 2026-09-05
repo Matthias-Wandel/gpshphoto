@@ -27,6 +27,7 @@ def dms_to_decimal(sign, deg, minutes, seconds):
 
 print("Gathering GPS data to file:",OUTPUT_FILE)
 outfile = open(OUTPUT_FILE, "w", encoding="utf-8")
+print("thumbnailSubdir = '_small'",file=outfile)
 print("const rawImageData = `",file=outfile)
 
 for root, dirs, files in os.walk(ROOT_DIR):
