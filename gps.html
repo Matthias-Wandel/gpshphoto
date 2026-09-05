@@ -880,7 +880,6 @@ const overlayUI = {
     endX: 0,
     selectedTimeMs: 0, // 0 when no image is selected
     histLeft: 10,
-    //histWidth: 400-20, // 400 pix window, 10 pix margin either side.
     timeSpan: 31536000000, // Default value 1 year of miliseconds
 
 
@@ -1051,22 +1050,22 @@ const overlayUI = {
                 if (monthEndMs < this.startMs) continue;
                 if (currentMonthMs > this.endMs) break;
 
-                // --- DRAW MONTH TICK ---
+                // Draw month tick
                 if (currentMonthMs >= this.startMs && currentMonthMs <= this.endMs) {
                     let drawMonthTick = true;
                     if (yearPixels < 400) {
-                        if (m !== 0 && m !== 6) {
+                        if (m % 6) {
                             if (m === 3 || m === 9) {
-                                if (yearPixels <= 100) drawMonthTick = false;
+                                if (yearPixels <= 75) drawMonthTick = false;
                             } else {
-                                if (yearPixels <= 200) drawMonthTick = false;
+                                if (yearPixels <= 150) drawMonthTick = false;
                             }
                         }
                     }
 
                     if (drawMonthTick) {
                         const x = ((currentMonthMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
-                        let tickLen = (m === 0 || m === 3 || m === 6 || m === 9) ? 10 : 6;
+                        let tickLen = (m % 3 == 0) ? 10 : 6;
 
                         overlayCtx.beginPath();
                         overlayCtx.moveTo(x, histBottom);
@@ -1074,12 +1073,10 @@ const overlayUI = {
                         overlayCtx.stroke();
 
                         if (m === 0) {
-
                             let shortYear = (year % 100).toString().padStart(2, '0');
                             if (yearPixels > 50){
                                 shortYear = year.toString();
                             }
-
                             overlayCtx.fillText(shortYear, x, histBottom + 12);
                         } else if (yearPixels > 150) {
                             overlayCtx.font = '12px sans-serif';
@@ -1101,7 +1098,7 @@ const overlayUI = {
                         if (dayTickMs < this.startMs) continue;
                         if (dayTickMs > this.endMs) break;
 
-                        const isIntervalTick = (d === 10 || d === 20);
+                        const isIntervalTick = (d === 16);
 
                         if (yearPixels >= 2000 || isIntervalTick) {
                             const x = ((dayTickMs - this.startMs) / this.timeSpan) * this.histWidth + this.histLeft;
